@@ -1,369 +1,564 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
+  Calendar,
   Clock,
+  MapPin,
+  Search,
+  Users,
+  Star,
+  ArrowRight,
+  Trophy,
+  Zap,
+  ShieldCheck,
+  UserCheck,
   CheckCircle2,
-  AlertCircle,
-  Sparkles,
+  X,
+  ChevronDown,
 } from 'lucide-react';
-import { bookingsApi, membersApi } from '../../services/api';
-
-const SPORTS_LIST = [
-  { id: 'padel', name: 'Padel' },
-  { id: 'tennis', name: 'Tennis' },
-  { id: 'badminton', name: 'Badminton' },
-  { id: 'cricket', name: 'Cricket' },
-  { id: 'football', name: 'Football Turf' },
-  { id: 'table_tennis', name: 'Table Tennis' },
-  { id: 'golf', name: 'Golf Simulator' },
-  { id: 'swimming', name: 'Swimming Pool' },
-];
+import { MOCK_COURTS, type MockCourt } from '../../data/mockSportsData';
 
 export const CustomerBookingPage: React.FC = () => {
-  const [selectedSport, setSelectedSport] = useState<string>('padel');
-  const [courts, setCourts] = useState<any[]>([]);
-  const [selectedCourt, setSelectedCourt] = useState<any>(null);
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [participants, setParticipants] = useState<number>(2);
-  const [notes, setNotes] = useState<string>('');
-  const [memberProfile, setMemberProfile] = useState<any>(null);
+  const [selectedSidebarSport, setSelectedSidebarSport] = useState<string>('Tennis');
+  const [selectedFilterCategory, setSelectedFilterCategory] = useState<string>('ALL');
+  const [searchQuery] = useState<string>('');
+  const [sortBy, setSortBy] = useState<string>('Popular');
 
-  const [isLoadingCourts, setIsLoadingCourts] = useState<boolean>(true);
-  const [isLoadingSlots, setIsLoadingSlots] = useState<boolean>(false);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successBooking, setSuccessBooking] = useState<any | null>(null);
+  const [bookingDate, setBookingDate] = useState<string>('Mon, 17 Nov 2026');
+  const [timeSlot, setTimeSlot] = useState<string>('6:00 PM – 7:00 PM');
+  const [locationName, setLocationName] = useState<string>('Apex Sports Club, Bangalore');
 
-  // 1. Load member profile for benefits
-  useEffect(() => {
-    membersApi.getMyMembership().then(setMemberProfile).catch(() => null);
-  }, []);
+  // Booking modal state
+  const [activeBookingCourt, setActiveBookingCourt] = useState<MockCourt | null>(null);
+  const [bookingConfirmed, setBookingConfirmed] = useState<boolean>(false);
 
-  // 2. Fetch courts when sport changes
-  useEffect(() => {
-    setIsLoadingCourts(true);
-    setSelectedCourt(null);
-    setSelectedSlot(null);
-    setErrorMessage(null);
-    bookingsApi
-      .getCourts(selectedSport)
-      .then((data) => {
-        setCourts(data);
-        if (data.length > 0) {
-          setSelectedCourt(data[0]);
-        }
-      })
-      .catch((err) => {
-        setErrorMessage(err.message || 'Failed to load courts.');
-      })
-      .finally(() => {
-        setIsLoadingCourts(false);
-      });
-  }, [selectedSport]);
+  // Exact 4 courts from the uploaded screenshot
+  const displayCourts = [
+    {
+      id: 'court-1',
+      name: 'Court 1 (Tennis)',
+      sport: 'Tennis',
+      type: 'Premium Hard Court',
+      surface: 'Outdoor',
+      capacity: 4,
+      rating: 4.9,
+      reviewsCount: 124,
+      hourlyRateDisplay: '₹15.00',
+      hourlyRateNum: 15,
+      isAvailable: true,
+      image: 'https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?auto=format&fit=crop&w=800&q=80',
+    },
+    {
+      id: 'court-2',
+      name: 'Court 2 (Football)',
+      sport: 'Football',
+      type: 'Artificial Turf',
+      surface: 'Outdoor',
+      capacity: 10,
+      rating: 4.8,
+      reviewsCount: 98,
+      hourlyRateDisplay: '₹20.00',
+      hourlyRateNum: 20,
+      isAvailable: true,
+      image: 'https://images.unsplash.com/photo-1529900748604-07564a03e7a6?auto=format&fit=crop&w=800&q=80',
+    },
+    {
+      id: 'court-3',
+      name: 'Court 3 (Cricket)',
+      sport: 'Cricket',
+      type: 'Turf Pitch',
+      surface: 'Outdoor',
+      capacity: 12,
+      rating: 4.9,
+      reviewsCount: 76,
+      hourlyRateDisplay: '₹25.00',
+      hourlyRateNum: 25,
+      isAvailable: true,
+      image: 'https://images.unsplash.com/photo-1531415074968-036ba1b575da?auto=format&fit=crop&w=800&q=80',
+    },
+    {
+      id: 'court-4',
+      name: 'Court 4 (Padel)',
+      sport: 'Padel',
+      type: 'Professional Grade',
+      surface: 'Indoor',
+      capacity: 4,
+      rating: 4.8,
+      reviewsCount: 82,
+      hourlyRateDisplay: '₹18.00',
+      hourlyRateNum: 18,
+      isAvailable: true,
+      image: 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?auto=format&fit=crop&w=800&q=80',
+    },
+    // Additional courts when user selects other sports or views all
+    ...MOCK_COURTS.slice(4).map((c) => ({
+      ...c,
+      hourlyRateDisplay: `₹${(c.hourlyRate / 100).toFixed(2)}`,
+      hourlyRateNum: c.hourlyRate / 100,
+    })),
+  ];
 
-  // 3. Fetch slots when court or date changes
-  useEffect(() => {
-    if (!selectedCourt) return;
-    setIsLoadingSlots(true);
-    setSelectedSlot(null);
-    setErrorMessage(null);
-    bookingsApi
-      .getAvailability(selectedCourt.id, selectedDate)
-      .then((res) => {
-        setAvailableSlots(res.slots || []);
-      })
-      .catch((err) => {
-        setErrorMessage(err.message || 'Failed to fetch court availability.');
-      })
-      .finally(() => {
-        setIsLoadingSlots(false);
-      });
-  }, [selectedCourt, selectedDate]);
+  const sportsList = [
+    { name: 'Tennis', icon: '🎾' },
+    { name: 'Football', icon: '⚽' },
+    { name: 'Cricket', icon: '🏏' },
+    { name: 'Padel', icon: '🏓' },
+    { name: 'Badminton', icon: '🏸' },
+  ];
 
-  // Pricing calculations
-  const baseRate = selectedCourt ? Number(selectedCourt.hourly_rate) : 0;
-  const discountPercent = memberProfile?.tier?.includes('GOLD') ? 0.2 : memberProfile?.tier?.includes('SILVER') ? 0.1 : 0;
-  const discountAmount = baseRate * discountPercent;
-  const finalPrice = Math.max(0, baseRate - discountAmount);
+  const filterTabs = [
+    { id: 'ALL', name: 'ALL', icon: '' },
+    { id: 'Tennis', name: 'TENNIS', icon: '🎾' },
+    { id: 'Football', name: 'FOOTBALL', icon: '⚽' },
+    { id: 'Cricket', name: 'CRICKET', icon: '🏏' },
+    { id: 'Padel', name: 'PADEL', icon: '🏓' },
+    { id: 'Badminton', name: 'BADMINTON', icon: '🏸' },
+  ];
 
-  const handleConfirmBooking = async () => {
-    if (!selectedCourt || !selectedSlot) {
-      setErrorMessage('Please select a court and an available time slot.');
-      return;
-    }
+  // Filtered court cards
+  const filteredCourts = displayCourts.filter((court) => {
+    const matchesFilter =
+      selectedFilterCategory === 'ALL' ||
+      court.sport.toLowerCase() === selectedFilterCategory.toLowerCase();
+    const matchesSearch =
+      !searchQuery ||
+      court.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      court.sport.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      court.type.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesFilter && matchesSearch;
+  });
 
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    try {
-      const res = await bookingsApi.createBooking({
-        court_id: selectedCourt.id,
-        booking_date: selectedDate,
-        start_time: selectedSlot,
-        participant_count: participants,
-        notes: notes || undefined,
-      });
-      setSuccessBooking(res);
-    } catch (err: any) {
-      const msg = err.response?.data?.detail || err.message || 'Booking reservation failed.';
-      setErrorMessage(msg);
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleBookNow = (court: any) => {
+    setActiveBookingCourt(court);
+    setBookingConfirmed(false);
+  };
+
+  const confirmReservation = () => {
+    setBookingConfirmed(true);
+    setTimeout(() => {
+      setActiveBookingCourt(null);
+      setBookingConfirmed(false);
+    }, 2200);
   };
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
-      {/* Header */}
-      <div>
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#C7FF36]/10 border border-[#C7FF36]/30 text-[#C7FF36] text-xs font-semibold mb-2">
-          <Sparkles className="h-3.5 w-3.5" />
-          <span>Automated Concurrency & Schedule Engine</span>
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-          Reserve a Championship Facility
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Select sport, court, and 60-minute session slot. Slots open on 30-minute intervals with automatic membership pricing discounts.
-        </p>
-      </div>
-
-      {/* Confirmation Modal */}
-      {successBooking && (
-        <div className="rounded-2xl bg-[#171A1D] border-2 border-[#C7FF36] p-6 shadow-2xl relative animate-in fade-in">
-          <div className="flex items-center gap-3 text-[#C7FF36] mb-3">
-            <CheckCircle2 className="h-6 w-6" />
-            <h3 className="text-lg font-bold text-white">Booking Confirmed Successfully!</h3>
+    <div className="space-y-6 sm:space-y-8 animate-fadeIn pb-12">
+      {/* 2-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-7 items-start">
+        {/* ================= LEFT SIDEBAR ================= */}
+        <div className="lg:col-span-4 bg-[#083222] rounded-[32px] p-5 sm:p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-between">
+          {/* Isometric Tennis Court Outline Graphics on top right */}
+          <div className="absolute top-2 right-2 w-48 h-48 opacity-30 pointer-events-none">
+            <svg viewBox="0 0 200 200" className="w-full h-full stroke-white fill-none" strokeWidth="1.8">
+              {/* Axonometric / Isometric court boundary */}
+              <polygon points="100,10 190,65 100,120 10,65" stroke="#CCFF00" strokeWidth="2" />
+              <polygon points="100,45 155,77 100,110 45,77" stroke="white" strokeWidth="1.2" />
+              <line x1="100" y1="10" x2="100" y2="120" stroke="white" strokeWidth="1.5" />
+              <line x1="55" y1="38" x2="145" y2="92" stroke="#CCFF00" strokeWidth="1.5" />
+              {/* Net posts & mesh */}
+              <line x1="90" y1="58" x2="110" y2="70" stroke="white" strokeWidth="3" />
+              <line x1="10" y1="65" x2="10" y2="85" stroke="#CCFF00" strokeWidth="2" />
+              <line x1="190" y1="65" x2="190" y2="85" stroke="#CCFF00" strokeWidth="2" />
+              <polygon points="100,30 190,85 100,140 10,85" stroke="white" strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
+            </svg>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-xl bg-[#101316] border border-[#25292D] my-4 text-xs">
+
+          <div className="relative z-10 space-y-5">
+            {/* Header */}
             <div>
-              <span className="text-slate-500 uppercase tracking-wider text-[10px]">Court</span>
-              <p className="font-bold text-white mt-0.5">{successBooking.court_name}</p>
-            </div>
-            <div>
-              <span className="text-slate-500 uppercase tracking-wider text-[10px]">Date & Time</span>
-              <p className="font-bold text-white mt-0.5">
-                {successBooking.booking_date} @ {new Date(successBooking.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              <h2 className="text-4xl sm:text-[46px] font-black italic tracking-tight font-display-sport leading-[0.95]">
+                BOOK A <br />
+                <span className="text-[#CCFF00]">COURT.</span>
+              </h2>
+              <p className="text-xs text-white/90 mt-2 font-medium leading-relaxed">
+                Play. Train. Compete. <br />
+                at Apex Sports Club.
               </p>
             </div>
-            <div>
-              <span className="text-slate-500 uppercase tracking-wider text-[10px]">Session Duration</span>
-              <p className="font-bold text-white mt-0.5">{successBooking.duration_minutes} Minutes</p>
-            </div>
-            <div>
-              <span className="text-slate-500 uppercase tracking-wider text-[10px]">Settled Amount</span>
-              <p className="font-bold text-[#C7FF36] mt-0.5">₹{successBooking.total_amount}</p>
+
+            {/* Inner White Booking Card */}
+            <div className="bg-white rounded-[24px] p-5 text-slate-900 shadow-lg space-y-4 border border-[#E8E2D5]">
+              <h3 className="text-[13px] font-black italic uppercase text-slate-950 font-display-sport tracking-wider">
+                SELECT YOUR BOOKINGS
+              </h3>
+
+              {/* Sport Selection Pills */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Sport</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {sportsList.map((sport) => {
+                    const isSelected = selectedSidebarSport === sport.name;
+                    return (
+                      <button
+                        key={sport.name}
+                        type="button"
+                        onClick={() => {
+                          setSelectedSidebarSport(sport.name);
+                          setSelectedFilterCategory(sport.name);
+                        }}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#CCFF00] text-slate-950 shadow-sm border border-[#bbf000]'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="text-xs">{sport.icon}</span>
+                        <span>{sport.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Date Selector */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Date</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={bookingDate}
+                    onChange={(e) => setBookingDate(e.target.value)}
+                    className="w-full bg-[#FAF8F5] border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 appearance-none focus:outline-none focus:border-emerald-600 cursor-pointer pr-8"
+                  >
+                    <option value="Mon, 17 Nov 2026">Mon, 17 Nov 2026</option>
+                    <option value="Tue, 18 Nov 2026">Tue, 18 Nov 2026</option>
+                    <option value="Wed, 19 Nov 2026">Wed, 19 Nov 2026</option>
+                    <option value="Thu, 20 Nov 2026">Thu, 20 Nov 2026</option>
+                    <option value="Fri, 21 Nov 2026">Fri, 21 Nov 2026</option>
+                    <option value="Sat, 22 Nov 2026">Sat, 22 Nov 2026</option>
+                    <option value="Sun, 23 Nov 2026">Sun, 23 Nov 2026</option>
+                  </select>
+                  <ChevronDown className="h-3.5 w-3.5 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Time Slot Selector */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Time Slot</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={timeSlot}
+                    onChange={(e) => setTimeSlot(e.target.value)}
+                    className="w-full bg-[#FAF8F5] border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 appearance-none focus:outline-none focus:border-emerald-600 cursor-pointer pr-8"
+                  >
+                    <option value="6:00 AM – 7:00 AM">6:00 AM – 7:00 AM</option>
+                    <option value="7:00 AM – 8:00 AM">7:00 AM – 8:00 AM</option>
+                    <option value="5:00 PM – 6:00 PM">5:00 PM – 6:00 PM</option>
+                    <option value="6:00 PM – 7:00 PM">6:00 PM – 7:00 PM</option>
+                    <option value="7:00 PM – 8:00 PM">7:00 PM – 8:00 PM</option>
+                    <option value="8:00 PM – 9:00 PM">8:00 PM – 9:00 PM</option>
+                  </select>
+                  <ChevronDown className="h-3.5 w-3.5 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Location Selector */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <MapPin className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Location</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={locationName}
+                    onChange={(e) => setLocationName(e.target.value)}
+                    className="w-full bg-[#FAF8F5] border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 appearance-none focus:outline-none focus:border-emerald-600 cursor-pointer pr-8"
+                  >
+                    <option value="Apex Sports Club, Bangalore">Apex Sports Club, Bangalore</option>
+                    <option value="Apex Arena West, Bangalore">Apex Arena West, Bangalore</option>
+                    <option value="Apex Stadium Center, Bangalore">Apex Stadium Center, Bangalore</option>
+                  </select>
+                  <ChevronDown className="h-3.5 w-3.5 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* SEARCH COURTS Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFilterCategory(selectedSidebarSport);
+                }}
+                className="w-full py-3.5 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 text-xs font-black flex items-center justify-center gap-2 transition shadow-md shadow-[#CCFF00]/25 cursor-pointer uppercase tracking-wider"
+              >
+                <Search className="h-4 w-4" />
+                <span>SEARCH COURTS</span>
+              </button>
             </div>
           </div>
-          <button
-            onClick={() => setSuccessBooking(null)}
-            className="px-5 py-2 rounded-xl bg-[#C7FF36] text-slate-950 font-bold text-xs hover:bg-[#b0e600] transition cursor-pointer"
-          >
-            Make Another Booking
-          </button>
         </div>
-      )}
 
-      {/* Error Alert */}
-      {errorMessage && (
-        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-3">
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          <p>{errorMessage}</p>
-        </div>
-      )}
+        {/* ================= RIGHT MAIN AREA ================= */}
+        <div className="lg:col-span-8 space-y-6">
+          {/* Top Hero Banner with Slanted Court Photo */}
+          <div className="relative rounded-[32px] overflow-hidden bg-[#FAF8F5] border border-[#E8E2D5] min-h-[175px] sm:min-h-[195px] flex items-center p-6 sm:p-8 shadow-sm">
+            {/* Right Slanted Realistic Floodlit Court Photo */}
+            <div
+              className="absolute right-0 top-0 bottom-0 w-1/2 sm:w-5/12 bg-cover bg-center"
+              style={{
+                clipPath: 'polygon(15% 0, 100% 0, 100% 100%, 0% 100%)',
+                backgroundImage: `url('https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?auto=format&fit=crop&w=800&q=80')`,
+              }}
+            />
 
-      {/* STEP 1: Sport Category Tabs */}
-      <div className="space-y-3">
-        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-          1. Select Sport Category
-        </label>
-        <div className="flex flex-wrap gap-2">
-          {SPORTS_LIST.map((sport) => (
-            <button
-              key={sport.id}
-              onClick={() => setSelectedSport(sport.id)}
-              className={`px-4 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer border ${
-                selectedSport === sport.id
-                  ? 'bg-[#C7FF36] text-slate-950 border-[#C7FF36] shadow-md shadow-[#C7FF36]/20 font-bold'
-                  : 'bg-[#171A1D] text-slate-300 border-[#25292D] hover:bg-[#25292D]'
-              }`}
-            >
-              {sport.name}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* STEP 2: Courts Carousel / Grid */}
-      <div className="space-y-3">
-        <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-          2. Select Court / Facility
-        </label>
-        {isLoadingCourts ? (
-          <div className="p-8 text-center text-slate-500 text-xs">Loading facilities...</div>
-        ) : courts.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 text-xs rounded-xl bg-[#171A1D] border border-[#25292D]">
-            No courts currently available for {selectedSport}.
+            <div className="relative z-10 max-w-sm sm:max-w-md space-y-1">
+              <span className="text-[12px] font-black uppercase tracking-[0.15em] text-[#083222]">
+                COURT BOOKING
+              </span>
+              <h1 className="text-4xl sm:text-5xl font-black italic tracking-tight font-display-sport leading-none">
+                <span className="text-[#083222]">FIND. BOOK. </span>
+                <span className="text-[#8EB800]">PLAY.</span>
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-600 font-medium pt-1 leading-relaxed">
+                Reserve your favourite court and get ready for the game.
+              </p>
+            </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {courts.map((court) => (
+
+          {/* Sport Category Filter Pills */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            {filterTabs.map((tab) => {
+              const isActive = selectedFilterCategory === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSelectedFilterCategory(tab.id)}
+                  className={`px-4 sm:px-5 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer ${
+                    isActive
+                      ? 'bg-[#CCFF00] text-slate-950 shadow-sm border border-[#bbf000] font-black'
+                      : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {tab.icon && <span>{tab.icon}</span>}
+                  <span>{tab.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Section Header: AVAILABLE COURTS + Sort Dropdown */}
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl sm:text-2xl font-black italic uppercase text-slate-950 font-display-sport tracking-tight">
+              AVAILABLE COURTS
+            </h2>
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+              <span>Sort by:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 outline-none cursor-pointer"
+              >
+                <option value="Popular">Popular</option>
+                <option value="PriceLow">Price: Low to High</option>
+                <option value="PriceHigh">Price: High to Low</option>
+                <option value="Rating">Rating</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 2x2 Grid of Detailed Court Cards (Horizontal Split Layout as in Screenshot!) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+            {filteredCourts.slice(0, 4).map((court) => (
               <div
                 key={court.id}
-                onClick={() => setSelectedCourt(court)}
-                className={`p-4 rounded-2xl border transition cursor-pointer flex flex-col justify-between ${
-                  selectedCourt?.id === court.id
-                    ? 'bg-[#171A1D] border-[#C7FF36] shadow-lg shadow-[#C7FF36]/10'
-                    : 'bg-[#171A1D]/70 border-[#25292D] hover:border-slate-700'
-                }`}
+                className="bg-white rounded-[24px] p-3.5 sm:p-4 border border-[#E8E2D5] shadow-sm hover:shadow-md transition flex flex-col sm:flex-row gap-3.5 sm:gap-4 items-stretch group"
               >
-                <div>
-                  {court.image_url && (
-                    <img
-                      src={court.image_url}
-                      alt={court.name}
-                      className="h-32 w-full object-cover rounded-xl mb-3"
-                    />
-                  )}
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-bold text-white">{court.name}</h4>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                      {court.is_indoor ? 'Indoor Pro' : 'Outdoor'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1">{court.surface_type || 'Professional Turf'}</p>
+                {/* Court Photo on Left */}
+                <div className="relative w-full sm:w-[48%] h-44 sm:h-auto min-h-[148px] rounded-[18px] overflow-hidden bg-slate-100 shrink-0">
+                  <img
+                    src={court.image}
+                    alt={court.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                  />
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-[#25292D] flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Hourly Rate</span>
-                  <span className="text-xs font-bold text-[#C7FF36]">₹{court.hourly_rate} / hr</span>
+                {/* Court Info on Right */}
+                <div className="w-full sm:w-[52%] flex flex-col justify-between py-0.5 space-y-2">
+                  <div className="space-y-1">
+                    <div className="flex items-start justify-between gap-1.5">
+                      <h3 className="text-base sm:text-[17px] font-bold text-slate-950 leading-tight">
+                        {court.name}
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full bg-[#E5F9D8] text-[#15803D] text-[10px] sm:text-[11px] font-bold flex items-center gap-1 shrink-0">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                        <span>Available</span>
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-500 font-normal">
+                      {court.type} • {court.surface}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1 text-xs text-slate-600">
+                    <div className="flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                      <span>Up to {court.capacity} players</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-slate-700 font-semibold">
+                      <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />
+                      <span>{court.rating} ({court.reviewsCount})</span>
+                    </div>
+                  </div>
+
+                  {/* Price & Book Button */}
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-1">
+                    <div>
+                      <span className="text-xl sm:text-2xl font-black text-slate-950">
+                        {court.hourlyRateDisplay}
+                      </span>
+                      <span className="text-xs text-slate-500 font-medium"> / hour</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleBookNow(court)}
+                      className="px-4 py-2 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 text-[11px] font-black flex items-center gap-1 transition shadow-sm cursor-pointer uppercase tracking-wider"
+                    >
+                      <span>BOOK NOW</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
-        )}
+
+          {/* Bottom Section: WHY BOOK WITH APEX? */}
+          <div className="bg-white rounded-[24px] p-5 sm:p-6 border border-[#E8E2D5] shadow-sm flex flex-col md:flex-row items-center gap-6">
+            <div className="flex items-center shrink-0">
+              <span className="w-1.5 h-8 bg-[#CCFF00] rounded-full mr-3.5"></span>
+              <h3 className="text-lg sm:text-xl font-black italic uppercase text-slate-950 font-display-sport tracking-tight leading-tight">
+                WHY BOOK <br />
+                WITH APEX?
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 flex-1 w-full">
+              {/* Feature 1 */}
+              <div className="space-y-0.5">
+                <Trophy className="h-6 w-6 text-[#8EB800] mb-1.5" />
+                <h4 className="text-xs font-bold text-slate-950">Premium Courts</h4>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  World-class playing surfaces
+                </p>
+              </div>
+
+              {/* Feature 2 */}
+              <div className="space-y-0.5">
+                <Zap className="h-6 w-6 text-[#8EB800] mb-1.5" />
+                <h4 className="text-xs font-bold text-slate-950">Instant Booking</h4>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  Check availability & book in seconds
+                </p>
+              </div>
+
+              {/* Feature 3 */}
+              <div className="space-y-0.5">
+                <ShieldCheck className="h-6 w-6 text-[#8EB800] mb-1.5" />
+                <h4 className="text-xs font-bold text-slate-950">Safe & Secure</h4>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  Verified bookings & payments
+                </p>
+              </div>
+
+              {/* Feature 4 */}
+              <div className="space-y-0.5">
+                <UserCheck className="h-6 w-6 text-[#8EB800] mb-1.5" />
+                <h4 className="text-xs font-bold text-slate-950">For Everyone</h4>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  Play, train or host tournaments
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* STEP 3 & 4: Date & Available 30-min Slots */}
-      {selectedCourt && (
-        <div className="rounded-2xl bg-[#171A1D] border border-[#25292D] p-6 shadow-xl space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#25292D]">
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                3. Choose Date
-              </label>
-              <input
-                type="date"
-                value={selectedDate}
-                min={new Date().toISOString().split('T')[0]}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-[#101316] border border-[#25292D] rounded-xl px-3.5 py-2 text-xs font-semibold text-white focus:outline-none focus:border-[#C7FF36]"
-              />
-            </div>
+      {/* Booking Confirmation Modal */}
+      {activeBookingCourt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 border border-slate-200 shadow-2xl relative animate-scaleUp">
+            <button
+              type="button"
+              onClick={() => setActiveBookingCourt(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
 
-            <div className="text-xs text-slate-400">
-              Operating hours: <span className="text-white font-semibold">{selectedCourt.opening_time} - {selectedCourt.closing_time}</span>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                4. Select 60-Minute Session Slot
-              </label>
-              <span className="text-[11px] text-slate-500">Intervals every 30 mins</span>
-            </div>
-
-            {isLoadingSlots ? (
-              <div className="py-8 text-center text-slate-500 text-xs">Checking real-time slot conflicts...</div>
-            ) : availableSlots.length === 0 ? (
-              <div className="py-8 text-center text-slate-500 text-xs">No available slots found for this date.</div>
+            {bookingConfirmed ? (
+              <div className="py-8 text-center space-y-3">
+                <div className="h-16 w-16 mx-auto rounded-full bg-[#CCFF00]/25 flex items-center justify-center text-emerald-800">
+                  <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+                </div>
+                <h3 className="text-2xl font-black text-slate-950 font-display-sport">
+                  BOOKING CONFIRMED!
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Your court slot for <span className="font-bold">{activeBookingCourt.name}</span> on{' '}
+                  <span className="font-bold">{bookingDate}</span> ({timeSlot}) has been reserved.
+                </p>
+              </div>
             ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
-                {availableSlots.map((slot) => {
-                  const isSelected = selectedSlot === slot.time_str;
-                  return (
-                    <button
-                      key={slot.time_str}
-                      type="button"
-                      disabled={!slot.is_available}
-                      onClick={() => setSelectedSlot(slot.time_str)}
-                      className={`p-2.5 rounded-xl text-center text-xs font-semibold transition border ${
-                        !slot.is_available
-                          ? 'bg-[#101316] border-[#25292D] text-slate-600 line-through cursor-not-allowed opacity-50'
-                          : isSelected
-                          ? 'bg-[#C7FF36] border-[#C7FF36] text-slate-950 font-bold shadow-md shadow-[#C7FF36]/20 cursor-pointer'
-                          : 'bg-[#101316] border-[#25292D] text-slate-200 hover:border-[#C7FF36]/50 cursor-pointer'
-                      }`}
-                    >
-                      <Clock className="h-3.5 w-3.5 mx-auto mb-1 opacity-70" />
-                      <span>{slot.time_str}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* STEP 5: Booking Details & Pricing Summary */}
-          {selectedSlot && (
-            <div className="pt-6 border-t border-[#25292D] space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-400 block mb-1">Number of Players</label>
-                  <select
-                    value={participants}
-                    onChange={(e) => setParticipants(Number(e.target.value))}
-                    className="w-full bg-[#101316] border border-[#25292D] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#C7FF36]"
-                  >
-                    <option value={1}>1 Player (Solo Training)</option>
-                    <option value={2}>2 Players (Singles Match)</option>
-                    <option value={4}>4 Players (Doubles Match)</option>
-                    <option value={6}>6+ Players (Group Session)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-400 block mb-1">Session Notes (Optional)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Bring racket demo, tournament practice"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    className="w-full bg-[#101316] border border-[#25292D] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#C7FF36]"
+              <>
+                <div className="flex items-center gap-3.5">
+                  <img
+                    src={activeBookingCourt.image}
+                    alt={activeBookingCourt.name}
+                    className="h-14 w-16 rounded-2xl object-cover shrink-0"
                   />
-                </div>
-              </div>
-
-              {/* Price Calculation Card */}
-              <div className="p-4 rounded-xl bg-[#101316] border border-[#25292D] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-white">{selectedCourt.name}</span>
-                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-[#C7FF36]/15 text-[#C7FF36]">
-                      {selectedSlot} (60 mins)
-                    </span>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-950">{activeBookingCourt.name}</h3>
+                    <p className="text-xs text-slate-500">{activeBookingCourt.type} • {locationName}</p>
                   </div>
-                  <p className="text-[11px] text-slate-400">
-                    Standard Rate: ₹{baseRate} • Member Discount: -₹{discountAmount.toFixed(0)} ({discountPercent * 100}%)
-                  </p>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold text-slate-500">Total Payable</span>
-                    <p className="text-xl font-mono font-bold text-[#C7FF36]">₹{finalPrice.toFixed(0)}</p>
+                <div className="bg-slate-50 rounded-2xl p-4 text-xs space-y-2 border border-slate-100">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Date:</span>
+                    <span className="font-bold text-slate-900">{bookingDate}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Time Slot:</span>
+                    <span className="font-bold text-slate-900">{timeSlot}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Rate:</span>
+                    <span className="font-bold text-slate-900">{activeBookingCourt.hourlyRateDisplay || `₹${activeBookingCourt.hourlyRate}`} / hr</span>
+                  </div>
+                  <div className="border-t border-slate-200 pt-2 flex justify-between font-extrabold text-sm text-slate-950">
+                    <span>Total Payable:</span>
+                    <span className="text-emerald-700 font-black">{activeBookingCourt.hourlyRateDisplay || `₹${activeBookingCourt.hourlyRate}`}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
                   <button
-                    onClick={handleConfirmBooking}
-                    disabled={isSubmitting}
-                    className="px-6 py-2.5 rounded-xl bg-[#C7FF36] text-slate-950 font-bold text-xs hover:bg-[#b0e600] transition shadow-lg shadow-[#C7FF36]/20 cursor-pointer disabled:opacity-50"
+                    type="button"
+                    onClick={() => setActiveBookingCourt(null)}
+                    className="flex-1 py-2.5 rounded-full border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                   >
-                    {isSubmitting ? 'Confirming...' : 'Confirm & Reserve'}
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmReservation}
+                    className="flex-1 py-2.5 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 text-xs font-black transition shadow-md shadow-[#CCFF00]/25 cursor-pointer uppercase tracking-wider"
+                  >
+                    Confirm Booking
                   </button>
                 </div>
-              </div>
-            </div>
-          )}
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>

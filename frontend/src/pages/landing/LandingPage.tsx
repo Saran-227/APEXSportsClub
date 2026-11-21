@@ -110,7 +110,11 @@ const COURTS_DATA: CourtItem[] = [
   },
 ];
 
-export const LandingPage: React.FC = () => {
+export interface LandingPageProps {
+  hideNav?: boolean;
+}
+
+export const LandingPage: React.FC<LandingPageProps> = ({ hideNav = false }) => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
 
@@ -194,95 +198,97 @@ export const LandingPage: React.FC = () => {
   return (
     <div className="landing-root bg-[#050607] text-[#f5f5f5] min-h-screen">
       {/* ==================== 1. TOP NAVIGATION ==================== */}
-      <header className={`site-header ${isScrolled ? 'scrolled' : ''}`} id="siteHeader">
-        <div className="header-container">
-          {/* Left Navigation Links */}
-          <nav className={`nav-left ${mobileMenuOpen ? 'open' : ''}`} aria-label="Main Navigation">
-            <ul className="nav-links">
-              <li><a href="#hero" className="nav-link" onClick={() => setMobileMenuOpen(false)}>Home</a></li>
-              <li><a href="#courts-reserve" className="nav-link" onClick={() => setMobileMenuOpen(false)}>Courts</a></li>
-              <li><a href="#coaches" className="nav-link" onClick={() => setMobileMenuOpen(false)}>Coaching</a></li>
-              <li><a href="#memberships" className="nav-link" onClick={() => setMobileMenuOpen(false)}>Pricing</a></li>
-            </ul>
-          </nav>
+      {!hideNav && (
+        <header className={`site-header ${isScrolled ? 'scrolled' : ''}`} id="siteHeader">
+          <div className="header-container">
+            {/* Left Navigation Links */}
+            <nav className={`nav-left ${mobileMenuOpen ? 'open' : ''}`} aria-label="Main Navigation">
+              <ul className="nav-links">
+                <li><a href="#hero" className="nav-link" onClick={() => setMobileMenuOpen(false)}>Home</a></li>
+                <li><a href="#courts-reserve" className="nav-link" onClick={() => setMobileMenuOpen(false)}>Courts</a></li>
+                <li><a href="#coaches" className="nav-link" onClick={() => setMobileMenuOpen(false)}>Coaching</a></li>
+                <li><a href="#memberships" className="nav-link" onClick={() => setMobileMenuOpen(false)}>Pricing</a></li>
+              </ul>
+            </nav>
 
-          {/* Center Brand Logo */}
-          <a href="#hero" className="brand-center" aria-label="Apex Sports Club">
-            <svg className="dot-matrix-brand" width="22" height="15" viewBox="0 0 22 15" fill="none">
-              <circle cx="2.5" cy="2.5" r="2.2" fill="#C6FF00" />
-              <circle cx="11" cy="2.5" r="2.2" fill="#C6FF00" />
-              <circle cx="19.5" cy="2.5" r="2.2" fill="#C6FF00" />
-              <circle cx="2.5" cy="12.5" r="2.2" fill="#C6FF00" />
-              <circle cx="11" cy="12.5" r="2.2" fill="#C6FF00" />
-              <circle cx="19.5" cy="12.5" r="2.2" fill="#C6FF00" />
-            </svg>
-            <span className="brand-title">APEX SPORTS CLUB</span>
-          </a>
+            {/* Center Brand Logo */}
+            <a href="#hero" className="brand-center" aria-label="Apex Sports Club">
+              <svg className="dot-matrix-brand" width="22" height="15" viewBox="0 0 22 15" fill="none">
+                <circle cx="2.5" cy="2.5" r="2.2" fill="#C6FF00" />
+                <circle cx="11" cy="2.5" r="2.2" fill="#C6FF00" />
+                <circle cx="19.5" cy="2.5" r="2.2" fill="#C6FF00" />
+                <circle cx="2.5" cy="12.5" r="2.2" fill="#C6FF00" />
+                <circle cx="11" cy="12.5" r="2.2" fill="#C6FF00" />
+                <circle cx="19.5" cy="12.5" r="2.2" fill="#C6FF00" />
+              </svg>
+              <span className="brand-title">APEX SPORTS CLUB</span>
+            </a>
 
-          {/* Right Actions & Portal Login */}
-          <div className="nav-right">
-            {/* Register button navigating to signup/registration */}
-            <button
-              type="button"
-              onClick={() => navigate('/login?mode=register')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '0.45rem 1.25rem',
-                borderRadius: '9999px',
-                border: '1px solid rgba(255, 255, 255, 0.22)',
-                backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                color: '#FFFFFF',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                cursor: 'pointer',
-                transition: 'all 0.25s ease',
-              }}
-              className="hover:border-[#C6FF00] hover:text-[#C6FF00] hover:bg-[#C6FF00]/10 hover:shadow-[0_0_16px_rgba(198,255,0,0.25)]"
-            >
-              Register
-            </button>
+            {/* Right Actions & Portal Login */}
+            <div className="nav-right">
+              {/* Register button navigating to signup/registration */}
+              <button
+                type="button"
+                onClick={() => navigate('/login?mode=register')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '0.45rem 1.25rem',
+                  borderRadius: '9999px',
+                  border: '1px solid rgba(255, 255, 255, 0.22)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                  color: '#FFFFFF',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  letterSpacing: '0.04em',
+                  cursor: 'pointer',
+                  transition: 'all 0.25s ease',
+                }}
+                className="hover:border-[#C6FF00] hover:text-[#C6FF00] hover:bg-[#C6FF00]/10 hover:shadow-[0_0_16px_rgba(198,255,0,0.25)]"
+              >
+                Register
+              </button>
 
-            {/* Portal / Dashboard Access Button */}
-            <button
-              type="button"
-              onClick={() => navigate(isAuthenticated ? '/dashboard' : '/login?mode=login')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.375rem',
-                padding: '0.45rem 1rem',
-                borderRadius: '9999px',
-                backgroundColor: '#C6FF00',
-                color: '#050607',
-                border: 'none',
-                fontSize: '0.82rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                boxShadow: '0 2px 10px rgba(198, 255, 0, 0.25)',
-              }}
-              className="hover:bg-[#b0e600]"
-            >
-              <span>{isAuthenticated ? 'Club Terminal' : 'Staff Login'}</span>
-              <span>↗</span>
-            </button>
+              {/* Portal / Dashboard Access Button */}
+              <button
+                type="button"
+                onClick={() => navigate(isAuthenticated ? '/customer/dashboard' : '/login?mode=login')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.375rem',
+                  padding: '0.45rem 1rem',
+                  borderRadius: '9999px',
+                  backgroundColor: '#C6FF00',
+                  color: '#050607',
+                  border: 'none',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 2px 10px rgba(198, 255, 0, 0.25)',
+                }}
+                className="hover:bg-[#b0e600]"
+              >
+                <span>{isAuthenticated ? 'Club Terminal' : 'Staff Login'}</span>
+                <span>↗</span>
+              </button>
 
-            {/* Mobile hamburger */}
-            <button
-              className={`mobile-toggle ${mobileMenuOpen ? 'active' : ''}`}
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              aria-label="Toggle navigation"
-            >
-              <span></span>
-              <span></span>
-              <span></span>
-            </button>
+              {/* Mobile hamburger */}
+              <button
+                className={`mobile-toggle ${mobileMenuOpen ? 'active' : ''}`}
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                aria-label="Toggle navigation"
+              >
+                <span></span>
+                <span></span>
+                <span></span>
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       <main>
         {/* ==================== 2. HERO SECTION ==================== */}

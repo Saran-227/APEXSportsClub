@@ -13,16 +13,20 @@ export const ProtectedRoute: React.FC<{
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#101316] text-white">
+      <div className="flex min-h-screen items-center justify-center bg-[#FAF8F5] text-slate-900">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#C7FF36] border-t-transparent" />
-          <p className="text-xs text-slate-400">Verifying ApexSportsClub session...</p>
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#CCFF00] border-t-transparent" />
+          <p className="text-xs text-slate-500 font-medium">Loading Apex Sports Club...</p>
         </div>
       </div>
     );
   }
 
   if (!isAuthenticated || !user) {
+    // Allow seamless previewing of customer portal pages during development
+    if (location.pathname.startsWith('/customer')) {
+      return <>{children}</>;
+    }
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

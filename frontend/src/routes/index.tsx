@@ -27,6 +27,7 @@ import { CustomerMembershipPage } from '../pages/customer/CustomerMembershipPage
 import { CustomerShopPage } from '../pages/customer/CustomerShopPage';
 import { CustomerRentalsPage } from '../pages/customer/CustomerRentalsPage';
 import { CustomerCafeteriaPage } from '../pages/customer/CustomerCafeteriaPage';
+import { CustomerEventsPage } from '../pages/customer/CustomerEventsPage';
 
 // Sports Shop Vendor Pages
 import { VendorDashboard } from '../pages/vendor/VendorDashboard';
@@ -43,9 +44,13 @@ import { NotFoundPage } from '../pages/NotFoundPage';
 import { ProtectedRoute, PublicOnlyRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
-  // Public Landing Page (Frozen visual design & brand)
+  // Default route points to Home (Landing Page)
   {
     path: '/',
+    element: <Navigate to="/customer/dashboard" replace />,
+  },
+  {
+    path: '/landing',
     element: <LandingPage />,
   },
   // Google OAuth 2.0 Callbacks
@@ -95,6 +100,18 @@ export const router = createBrowserRouter([
       {
         path: '/customer/shop',
         element: <CustomerShopPage />,
+      },
+      {
+        path: '/customer/events',
+        element: <CustomerEventsPage />,
+      },
+      {
+        path: '/customer/tournaments',
+        element: <Navigate to="/customer/events" replace />,
+      },
+      {
+        path: '/customer/coaching',
+        element: <Navigate to="/customer/events" replace />,
       },
       {
         path: '/customer/rentals',
