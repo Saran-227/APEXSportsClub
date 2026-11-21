@@ -88,6 +88,7 @@ class FoodOrderResponse(BaseModel):
     created_at: datetime
     customer_name: str
     items: List[FoodOrderItemResponse]
+    invoice_number: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -281,6 +282,37 @@ def create_food_order(
     db.commit()
     db.refresh(order)
 
+    invoice_number = None
+    try:
+        from backend.app.finance.invoice_service import create_or_get_invoice
+        from backend.app.memberships.models import Member
+        member = db.query(Member).filter(Member.user_id == current_user.id).first()
+        items_payload = [
+            {
+                "description": m_item.name + (f" ({notes})" if notes else ""),
+                "quantity": qty,
+                "unit_price": float(u_price),
+                "discount": 0.0,
+                "tax": 0.0,
+                "total": float(l_total),
+            }
+            for m_item, qty, u_price, l_total, notes in order_items_to_create
+        ]
+        inv = create_or_get_invoice(
+            db=db,
+            user=current_user,
+            transaction_type="CAFETERIA",
+            amount=order.total_amount,
+            items=items_payload,
+            reference_id=order.order_number,
+            membership_number=member.membership_number if member else None,
+            idempotency_key=f"FOOD_ORDER:{order.id}",
+        )
+        invoice_number = inv.invoice_number
+    except Exception as e:
+        import logging
+        logging.getLogger("scms.cafeteria").error("Failed to generate food order invoice: %s", e)
+
     return FoodOrderResponse(
         id=order.id,
         cafeteria_id=order.cafeteria_id,
@@ -293,6 +325,7 @@ def create_food_order(
         created_at=order.created_at,
         customer_name=f"{current_user.first_name} {current_user.last_name}".strip(),
         items=response_items,
+        invoice_number=invoice_number,
     )
 
 

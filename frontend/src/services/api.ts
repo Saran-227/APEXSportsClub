@@ -10,6 +10,8 @@ import type {
   User,
   Member,
   PaginatedResponse,
+  Invoice,
+  InvoiceSummary,
 } from '../types';
 import { mapBackendUser } from '../types';
 
@@ -613,6 +615,45 @@ export const crmApi = {
   },
   getNotifications: async () => {
     const response = await apiClient.get<Array<any>>('/crm/notifications');
+    return response.data;
+  },
+};
+
+export const invoiceApi = {
+  getInvoices: async (params?: { transaction_type?: string; email_status?: string; search?: string; limit?: number }) => {
+    const response = await apiClient.get<Invoice[]>('/invoices', { params });
+    return response.data;
+  },
+  getInvoiceDetail: async (id: string) => {
+    const response = await apiClient.get<Invoice>(`/invoices/${id}`);
+    return response.data;
+  },
+  downloadInvoicePdf: async (id: string, invoiceNumber: string = 'invoice') => {
+    const response = await apiClient.get(`/invoices/${id}/download`, {
+      responseType: 'blob',
+    });
+    const blob = new Blob([response.data], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${invoiceNumber}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode?.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+  resendInvoiceEmail: async (id: string) => {
+    const response = await apiClient.post<{
+      success: boolean;
+      message: string;
+      email_status: string;
+      email_sent_at?: string;
+      email_retry_count: number;
+    }>(`/invoices/${id}/resend`);
+    return response.data;
+  },
+  getSummary: async () => {
+    const response = await apiClient.get<InvoiceSummary>('/invoices/summary');
     return response.data;
   },
 };

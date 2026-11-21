@@ -1,7 +1,16 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import List, Optional
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_backend_dir = Path(__file__).resolve().parents[2]
+_root_dir = Path(__file__).resolve().parents[3]
+_env_files = [
+    str(_backend_dir / ".env"),
+    str(_root_dir / ".env"),
+    ".env",
+]
 
 
 class Settings(BaseSettings):
@@ -48,6 +57,12 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT_ATTEMPTS: int = Field(default=5)
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = Field(default=900)  # 15 minutes
 
+    # SendGrid Email Configuration
+    SENDGRID_API_KEY: Optional[str] = Field(default=None)
+    EMAIL_FROM: str = Field(default="majiasim.7710@gmail.com")
+    EMAIL_FROM_NAME: str = Field(default="Apex Sports Club")
+    INVOICE_STORAGE_DIR: str = Field(default="storage/invoices")
+
     # CORS Allowed Origins
     CORS_ORIGINS: List[str] = Field(
         default=[
@@ -61,7 +76,7 @@ class Settings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_env_files,
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",

@@ -29,3 +29,7 @@ Thumbs.db
 *.pem
 *.key
 *.crt
+
+# Generated storage & local databases
+backend/storage/invoices/
+*.db

@@ -10,6 +10,7 @@ import {
   X,
   CreditCard,
   ShieldCheck,
+  FileText,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
@@ -234,6 +235,14 @@ export const CustomerLayout: React.FC = () => {
                   >
                     <CreditCard className="h-3.5 w-3.5" />
                     <span>My Membership</span>
+                  </NavLink>
+                  <NavLink
+                    to="/customer/invoices"
+                    onClick={() => setProfileDropdownOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2 text-xs rounded-lg hover:bg-[#CCFF00]/10 hover:text-[#88B000] transition"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    <span>My Invoices</span>
                   </NavLink>
                   <button
                     onClick={() => {

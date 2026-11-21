@@ -1,11 +1,14 @@
 """Finance, Admin Overview, and Vendor Administration API endpoints."""
+import json
+from pathlib import Path
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from backend.app.auth.dependencies import get_current_user
@@ -17,6 +20,25 @@ from backend.app.bookings.models import Court, CourtBooking
 from backend.app.shop.models import Product, ShopOrder, Vendor
 from backend.app.cafeteria.models import Cafeteria, FoodOrder
 from backend.app.finance.models import Expense, Invoice, Payment
+from backend.app.core.config import get_settings
+from backend.app.finance.email_service import (
+    send_diagnostic_test_email,
+    validate_sendgrid_key_format,
+)
+from backend.app.finance.schemas import (
+    EmailDiagnosticStatusResponse,
+    EmailDiagnosticTestRequest,
+    EmailDiagnosticTestResponse,
+    InvoiceItemSchema,
+    InvoiceMetricsResponse,
+    InvoiceResponse,
+    ResendInvoiceEmailResponse,
+)
+from backend.app.finance.invoice_service import (
+    generate_invoice_pdf,
+    get_invoice_storage_dir,
+    resend_invoice_email,
+)
 
 router = APIRouter(prefix="", tags=["Finance & Admin Management"])
 
@@ -238,3 +260,271 @@ def list_transactions(
         )
         for p in payments
     ]
+
+
+def _serialize_invoice(inv: Invoice) -> InvoiceResponse:
+    """Helper serializer from Invoice model to InvoiceResponse DTO."""
+    items_list = []
+    if inv.items_json:
+        try:
+            raw = json.loads(inv.items_json)
+            for it in raw:
+                items_list.append(
+                    InvoiceItemSchema(
+                        description=it.get("description", "Item"),
+                        quantity=it.get("quantity", 1),
+                        unit_price=Decimal(str(it.get("unit_price", 0))),
+                        discount=Decimal(str(it.get("discount", 0))),
+                        tax=Decimal(str(it.get("tax", 0))),
+                        total=Decimal(str(it.get("total", 0))),
+                    )
+                )
+        except Exception:
+            pass
+
+    has_pdf = bool(inv.pdf_path and Path(inv.pdf_path).exists())
+    cust_name = inv.customer_name
+    if not cust_name and inv.user:
+        cust_name = f"{inv.user.first_name} {inv.user.last_name}".strip()
+
+    cust_email = inv.customer_email
+    if not cust_email and inv.user:
+        cust_email = inv.user.email
+
+    return InvoiceResponse(
+        id=inv.id,
+        invoice_number=inv.invoice_number,
+        user_id=inv.user_id,
+        customer_name=cust_name or "Member",
+        customer_email=cust_email or "",
+        transaction_type=inv.transaction_type,
+        reference_id=inv.reference_id,
+        payment_id=inv.payment_id,
+        subtotal=inv.subtotal,
+        discount_amount=inv.discount_amount,
+        tax_amount=inv.tax_amount,
+        amount=inv.amount,
+        currency=inv.currency,
+        status=inv.status,
+        issued_at=inv.issued_at,
+        has_pdf=has_pdf,
+        email_status=inv.email_status,
+        email_sent_at=inv.email_sent_at,
+        email_message_id=inv.email_message_id,
+        email_retry_count=inv.email_retry_count,
+        email_error=inv.email_error,
+        items=items_list,
+    )
+
+
+@router.get("/invoices/summary", response_model=InvoiceMetricsResponse)
+def get_invoice_metrics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: Consolidated invoice and email delivery operational metrics."""
+    roles = [r.role.name for r in current_user.roles]
+    if resolve_primary_role(roles) != "ADMIN":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    total_invoices = db.query(func.count(Invoice.id)).scalar() or 0
+    total_rev = db.query(func.sum(Invoice.amount)).filter(Invoice.status == "PAID").scalar() or Decimal("0.00")
+    success_emails = db.query(func.count(Invoice.id)).filter(Invoice.email_status == "SENT").scalar() or 0
+    failed_emails = db.query(func.count(Invoice.id)).filter(Invoice.email_status == "FAILED").scalar() or 0
+    pending_emails = db.query(func.count(Invoice.id)).filter(Invoice.email_status == "PENDING").scalar() or 0
+
+    return InvoiceMetricsResponse(
+        total_invoices=total_invoices,
+        total_revenue=total_rev,
+        successful_deliveries=success_emails,
+        failed_deliveries=failed_emails,
+        pending_deliveries=pending_emails,
+    )
+
+
+@router.get("/invoices", response_model=List[InvoiceResponse])
+def list_invoices(
+    search: Optional[str] = Query(None, description="Search by invoice number, customer name, or email"),
+    transaction_type: Optional[str] = Query(None, description="Filter by transaction type: MEMBERSHIP, SHOP, CAFETERIA, BOOKING, RENTAL"),
+    email_status: Optional[str] = Query(None, description="Filter by email status: SENT, FAILED, PENDING"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Retrieve invoices. Customers only see their own; Admins can search and filter club-wide."""
+    roles = [r.role.name for r in current_user.roles]
+    primary_role = resolve_primary_role(roles)
+
+    query = db.query(Invoice)
+
+    if primary_role != "ADMIN":
+        query = query.filter(Invoice.user_id == current_user.id)
+    else:
+        if search:
+            s_term = f"%{search.strip()}%"
+            query = query.filter(
+                or_(
+                    Invoice.invoice_number.ilike(s_term),
+                    Invoice.customer_name.ilike(s_term),
+                    Invoice.customer_email.ilike(s_term),
+                    Invoice.reference_id.ilike(s_term),
+                )
+            )
+
+    if transaction_type:
+        query = query.filter(Invoice.transaction_type == transaction_type.strip().upper())
+
+    if email_status:
+        query = query.filter(Invoice.email_status == email_status.strip().upper())
+
+    invoices = query.order_by(Invoice.issued_at.desc()).offset(offset).limit(limit).all()
+    return [_serialize_invoice(inv) for inv in invoices]
+
+
+@router.get("/invoices/{invoice_id}", response_model=InvoiceResponse)
+def get_invoice_detail(
+    invoice_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Retrieve itemized details for an invoice, validating ownership."""
+    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    roles = [r.role.name for r in current_user.roles]
+    primary_role = resolve_primary_role(roles)
+
+    if primary_role != "ADMIN" and inv.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You are not authorized to view this invoice")
+
+    return _serialize_invoice(inv)
+
+
+@router.get("/invoices/{invoice_id}/download")
+def download_invoice_pdf(
+    invoice_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Stream or download the official invoice PDF document."""
+    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    roles = [r.role.name for r in current_user.roles]
+    primary_role = resolve_primary_role(roles)
+
+    if primary_role != "ADMIN" and inv.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You are not authorized to download this invoice")
+
+    storage_dir = get_invoice_storage_dir()
+    pdf_path = Path(inv.pdf_path) if inv.pdf_path else storage_dir / f"{inv.invoice_number}.pdf"
+
+    if not pdf_path.exists():
+        # Regenerate on the fly
+        items = json.loads(inv.items_json) if inv.items_json else [{"description": inv.transaction_type, "quantity": 1, "unit_price": float(inv.amount), "discount": 0, "tax": 0, "total": float(inv.amount)}]
+        generate_invoice_pdf(
+            invoice_number=inv.invoice_number,
+            issued_at=inv.issued_at,
+            customer_name=inv.customer_name or f"{inv.user.first_name} {inv.user.last_name}".strip(),
+            customer_email=inv.customer_email or inv.user.email,
+            transaction_type=inv.transaction_type,
+            items=items,
+            subtotal=inv.subtotal,
+            discount_amount=inv.discount_amount,
+            tax_amount=inv.tax_amount,
+            total_amount=inv.amount,
+            currency=inv.currency,
+            customer_id=str(inv.user_id),
+            reference_id=inv.reference_id,
+            output_path=pdf_path,
+        )
+        inv.pdf_path = str(pdf_path)
+        db.commit()
+
+    return FileResponse(
+        path=str(pdf_path),
+        media_type="application/pdf",
+        filename=f"{inv.invoice_number}.pdf",
+    )
+
+
+@router.post("/invoices/{invoice_id}/resend", response_model=ResendInvoiceEmailResponse)
+def resend_invoice(
+    invoice_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Resend invoice email with PDF attachment to registered customer address."""
+    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    roles = [r.role.name for r in current_user.roles]
+    primary_role = resolve_primary_role(roles)
+
+    if primary_role != "ADMIN" and inv.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You are not authorized to resend this invoice")
+
+    success, message = resend_invoice_email(db, inv)
+    if not success and "Please wait" in message:
+        raise HTTPException(status_code=429, detail=message)
+
+    return ResendInvoiceEmailResponse(
+        success=success,
+        message=message,
+        email_status=inv.email_status,
+        email_sent_at=inv.email_sent_at,
+        email_retry_count=inv.email_retry_count,
+    )
+
+
+@router.get("/finance/email/diagnostics/status", response_model=EmailDiagnosticStatusResponse)
+def get_email_diagnostic_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Admin-only protected diagnostic endpoint to inspect SendGrid environment configuration safely."""
+    roles = [r.role.name for r in current_user.roles]
+    primary_role = resolve_primary_role(roles)
+    if primary_role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin privileges required for email diagnostics")
+
+    settings = get_settings()
+    key_configured = bool(settings.SENDGRID_API_KEY and settings.SENDGRID_API_KEY.strip())
+    is_valid_format, key_msg = validate_sendgrid_key_format(settings.SENDGRID_API_KEY)
+
+    failed_count = db.query(Invoice).filter(Invoice.email_status == "FAILED").count()
+    sent_count = db.query(Invoice).filter(Invoice.email_status == "SENT").count()
+    pending_count = db.query(Invoice).filter(Invoice.email_status == "PENDING").count()
+
+    return EmailDiagnosticStatusResponse(
+        key_configured=key_configured,
+        key_format_valid=is_valid_format,
+        key_diagnostic_message=key_msg,
+        sender_email=settings.EMAIL_FROM or "Unset",
+        sender_name=settings.EMAIL_FROM_NAME or "Apex Sports Club",
+        storage_dir=settings.INVOICE_STORAGE_DIR,
+        recent_failed_emails_count=failed_count,
+        recent_sent_emails_count=sent_count,
+        recent_pending_emails_count=pending_count,
+    )
+
+
+@router.post("/finance/email/diagnostics/test", response_model=EmailDiagnosticTestResponse)
+def run_email_diagnostic_test(
+    payload: EmailDiagnosticTestRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Admin-only protected diagnostic endpoint to trigger a real test email via SendGrid without creating fake purchases or invoices."""
+    roles = [r.role.name for r in current_user.roles]
+    primary_role = resolve_primary_role(roles)
+    if primary_role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin privileges required for email diagnostics")
+
+    admin_identifier = f"{current_user.first_name} {current_user.last_name} ({current_user.email})".strip()
+    result = send_diagnostic_test_email(to_email=str(payload.recipient_email), admin_user=admin_identifier)
+    return EmailDiagnosticTestResponse(**result)

@@ -96,6 +96,7 @@ class ShopOrderResponse(BaseModel):
     customer_name: str
     customer_email: str
     items: List[OrderItemResponse]
+    invoice_number: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -122,6 +123,7 @@ class EquipmentRentalResponse(BaseModel):
     rental_fee: Decimal
     status: str
     notes: Optional[str] = None
+    invoice_number: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -335,6 +337,37 @@ def create_shop_order(
     db.commit()
     db.refresh(order)
 
+    invoice_number = None
+    try:
+        from backend.app.finance.invoice_service import create_or_get_invoice
+        from backend.app.memberships.models import Member
+        member = db.query(Member).filter(Member.user_id == current_user.id).first()
+        items_payload = [
+            {
+                "description": f"{prod.name} (SKU: {str(prod.id)[:8].upper()})",
+                "quantity": qty,
+                "unit_price": float(u_price),
+                "discount": 0.0,
+                "tax": 0.0,
+                "total": float(l_total),
+            }
+            for prod, qty, u_price, l_total in order_items_to_create
+        ]
+        inv = create_or_get_invoice(
+            db=db,
+            user=current_user,
+            transaction_type="SHOP",
+            amount=order.total_amount,
+            items=items_payload,
+            reference_id=order.order_number,
+            membership_number=member.membership_number if member else None,
+            idempotency_key=f"SHOP_ORDER:{order.id}",
+        )
+        invoice_number = inv.invoice_number
+    except Exception as e:
+        import logging
+        logging.getLogger("scms.shop").error("Failed to generate shop invoice: %s", e)
+
     return ShopOrderResponse(
         id=order.id,
         vendor_id=order.vendor_id,
@@ -349,6 +382,7 @@ def create_shop_order(
         customer_name=f"{current_user.first_name} {current_user.last_name}".strip(),
         customer_email=current_user.email,
         items=response_items,
+        invoice_number=invoice_number,
     )
 
 
@@ -459,6 +493,35 @@ def book_equipment_rental(
     db.commit()
     db.refresh(rental)
 
+    invoice_number = None
+    try:
+        from backend.app.finance.invoice_service import create_or_get_invoice
+        from backend.app.memberships.models import Member
+        member = db.query(Member).filter(Member.user_id == current_user.id).first()
+        start_str = payload.rental_start.strftime("%Y-%m-%d")
+        end_str = payload.rental_end.strftime("%Y-%m-%d")
+        inv = create_or_get_invoice(
+            db=db,
+            user=current_user,
+            transaction_type="RENTAL",
+            amount=rental.rental_fee,
+            items=[{
+                "description": f"Rental: {prod.name} ({duration_days} day(s): {start_str} to {end_str})",
+                "quantity": duration_days,
+                "unit_price": float(daily_rate),
+                "discount": 0.0,
+                "tax": 0.0,
+                "total": float(rental.rental_fee),
+            }],
+            reference_id=f"RNT-{str(rental.id)[:8].upper()}",
+            membership_number=member.membership_number if member else None,
+            idempotency_key=f"RENTAL:{rental.id}",
+        )
+        invoice_number = inv.invoice_number
+    except Exception as e:
+        import logging
+        logging.getLogger("scms.shop").error("Failed to generate rental invoice: %s", e)
+
     return EquipmentRentalResponse(
         id=rental.id,
         product_id=prod.id,
@@ -470,6 +533,7 @@ def book_equipment_rental(
         rental_fee=rental.rental_fee,
         status=rental.status,
         notes=rental.notes,
+        invoice_number=invoice_number,
     )
 
 

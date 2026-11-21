@@ -28,6 +28,7 @@ import { CustomerShopPage } from '../pages/customer/CustomerShopPage';
 import { CustomerRentalsPage } from '../pages/customer/CustomerRentalsPage';
 import { CustomerCafeteriaPage } from '../pages/customer/CustomerCafeteriaPage';
 import { CustomerEventsPage } from '../pages/customer/CustomerEventsPage';
+import { CustomerInvoicesPage } from '../pages/customer/CustomerInvoicesPage';
 
 // Sports Shop Vendor Pages
 import { VendorDashboard } from '../pages/vendor/VendorDashboard';
@@ -120,6 +121,10 @@ export const router = createBrowserRouter([
       {
         path: '/customer/cafeteria',
         element: <CustomerCafeteriaPage />,
+      },
+      {
+        path: '/customer/invoices',
+        element: <CustomerInvoicesPage />,
       },
     ],
   },

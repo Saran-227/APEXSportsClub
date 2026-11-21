@@ -74,6 +74,7 @@ class BookingResponse(BaseModel):
     notes: Optional[str] = None
     user_name: str
     user_email: str
+    invoice_number: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -251,6 +252,34 @@ def create_booking(
     db.commit()
     db.refresh(booking)
 
+    invoice_number = None
+    try:
+        from backend.app.finance.invoice_service import create_or_get_invoice
+        slot_label = booking.start_time.strftime("%I:%M %p") if booking.start_time else "Session"
+        inv = create_or_get_invoice(
+            db=db,
+            user=current_user,
+            transaction_type="BOOKING",
+            amount=booking.total_amount,
+            items=[{
+                "description": f"{court.sport.capitalize()} - {court.name} (60 mins on {booking.booking_date} at {slot_label})",
+                "quantity": 1,
+                "unit_price": float(court.hourly_rate),
+                "discount": float(booking.discount_amount),
+                "tax": 0.0,
+                "total": float(booking.total_amount),
+            }],
+            subtotal=court.hourly_rate,
+            discount_amount=booking.discount_amount,
+            reference_id=f"BKG-{str(booking.id)[:8].upper()}",
+            membership_number=member.membership_number if member else None,
+            idempotency_key=f"BOOKING:{booking.id}",
+        )
+        invoice_number = inv.invoice_number
+    except Exception as e:
+        import logging
+        logging.getLogger("scms.bookings").error("Failed to generate booking invoice: %s", e)
+
     return BookingResponse(
         id=booking.id,
         court_id=court.id,
@@ -268,6 +297,7 @@ def create_booking(
         notes=booking.notes,
         user_name=f"{current_user.first_name} {current_user.last_name}".strip(),
         user_email=current_user.email,
+        invoice_number=invoice_number,
     )
 
 

@@ -206,11 +206,38 @@ def subscribe_to_plan(
     )
     db.add(sub)
     db.commit()
+    db.refresh(sub)
+
+    invoice_number = None
+    try:
+        from backend.app.finance.invoice_service import create_or_get_invoice
+        inv = create_or_get_invoice(
+            db=db,
+            user=current_user,
+            transaction_type="MEMBERSHIP",
+            amount=plan.price,
+            items=[{
+                "description": f"{plan.name} Tier Membership ({plan.duration_months} Months)",
+                "quantity": 1,
+                "unit_price": float(plan.price),
+                "discount": 0.0,
+                "tax": 0.0,
+                "total": float(plan.price),
+            }],
+            reference_id=f"SUB-{str(sub.id)[:8].upper()}",
+            membership_number=member.membership_number,
+            idempotency_key=f"MEMBERSHIP:{sub.id}",
+        )
+        invoice_number = inv.invoice_number
+    except Exception as e:
+        import logging
+        logging.getLogger("scms.members").error("Failed to generate membership invoice: %s", e)
 
     return {
         "message": f"Successfully subscribed to {plan.name}!",
         "plan": plan.name,
         "expiry_date": member.expiry_date.isoformat(),
+        "invoice_number": invoice_number,
     }
 
 

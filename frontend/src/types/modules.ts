@@ -81,14 +81,51 @@ export interface FinancialSummary {
   netMargin: number;
 }
 
+export interface InvoiceItem {
+  description: string;
+  quantity: number;
+  unit_price: number;
+  discount: number;
+  tax: number;
+  total: number;
+}
+
 export interface Invoice {
   id: string;
-  invoiceNumber: string;
-  memberName: string;
-  issueDate: string;
-  dueDate: string;
+  invoice_number: string;
+  user_id: string;
+  customer_name: string;
+  customer_email: string;
+  transaction_type: 'MEMBERSHIP' | 'BOOKING' | 'SHOP' | 'RENTAL' | 'CAFETERIA' | string;
+  reference_id?: string;
+  payment_id?: string;
+  subtotal: number;
+  discount_amount: number;
+  tax_amount: number;
   amount: number;
-  status: 'PAID' | 'UNPAID' | 'OVERDUE';
+  currency: string;
+  status: string;
+  issued_at: string;
+  has_pdf: boolean;
+  email_status: 'SENT' | 'PENDING' | 'FAILED' | string;
+  email_sent_at?: string;
+  email_message_id?: string;
+  email_retry_count: number;
+  email_error?: string;
+  items?: InvoiceItem[];
+  // Legacy compatibility fields if any legacy component expects them
+  invoiceNumber?: string;
+  memberName?: string;
+  issueDate?: string;
+  dueDate?: string;
+}
+
+export interface InvoiceSummary {
+  total_invoices: number;
+  total_revenue: number;
+  successful_deliveries: number;
+  failed_deliveries: number;
+  pending_deliveries: number;
 }
 
 // Staff & Employees
