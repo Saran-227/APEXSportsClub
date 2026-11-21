@@ -7,8 +7,8 @@ export const AdminLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900 font-sans">
-      {/* Dark Navy Sidebar */}
+    <div className="flex min-h-screen bg-[#101316] text-slate-100 font-sans">
+      {/* Dark Sidebar */}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Main Workspace Frame */}
@@ -17,7 +17,7 @@ export const AdminLayout: React.FC = () => {
         <TopNavbar onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
 
         {/* Content Body */}
-        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8 bg-[#101316]">
           <div className="mx-auto max-w-7xl">
             <Outlet />
           </div>

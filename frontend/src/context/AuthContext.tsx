@@ -13,6 +13,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     async function checkCurrentSession() {
       try {
+        // Pre-initialize anti-CSRF token handshake
+        try {
+          await authApi.initCsrf();
+        } catch {
+          // Non-blocking if backend is temporarily unreachable
+        }
+
         const currentUser = await authApi.getCurrentUser();
         if (isMounted) {
           setUser(currentUser);
@@ -51,12 +58,56 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const loginWithGoogle = async (credential: string): Promise<boolean> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await authApi.loginWithGoogle(credential);
+      setUser(response.user);
+      return true;
+    } catch (err) {
+      const normalized = normalizeApiError(err);
+      setError(normalized.message);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const register = async (userData: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    phone?: string;
+    password?: string;
+  }): Promise<boolean> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await authApi.register({
+        email: userData.email,
+        firstName: userData.firstName,
+        lastName: userData.lastName,
+        phone: userData.phone,
+        password: userData.password || 'ApexMember@123',
+      });
+      setUser(response.user);
+      return true;
+    } catch (err) {
+      const normalized = normalizeApiError(err);
+      setError(normalized.message);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const logout = async (): Promise<void> => {
     setIsLoading(true);
     try {
       await authApi.logout();
     } catch {
-      // Clean local session state
+      // Clean local session state even if network logout fails
     } finally {
       setUser(null);
       setIsLoading(false);
@@ -64,6 +115,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const clearError = () => setError(null);
+
+  const hasRole = (role: string): boolean => {
+    if (!user) return false;
+    const target = role.toLowerCase();
+    if (user.role && user.role.toLowerCase() === target) return true;
+    return Array.isArray(user.roles) && user.roles.some((r) => r.toLowerCase() === target);
+  };
+
+  const hasPermission = (permission: string): boolean => {
+    if (!user) return false;
+    if (hasRole('admin')) return true;
+    return Array.isArray(user.permissions) && user.permissions.includes(permission);
+  };
 
   return (
     <AuthContext.Provider
@@ -73,8 +137,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isLoading,
         error,
         login,
+        loginWithGoogle,
+        register,
         logout,
         clearError,
+        hasRole,
+        hasPermission,
       }}
     >
       {children}

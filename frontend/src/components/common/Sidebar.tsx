@@ -12,8 +12,9 @@ import {
   MessageSquareText,
   Activity,
   X,
-  ChevronRight,
+  Store,
 } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -42,13 +43,14 @@ const navigationGroups: NavGroup[] = [
   {
     label: 'Club Operations',
     items: [
-      { name: 'Members', to: '/members', icon: Users, badge: '1.2k' },
-      { name: 'Court Bookings', to: '/bookings', icon: CalendarCheck, badge: 'Today' },
+      { name: 'Members & Plans', to: '/members', icon: Users },
+      { name: 'Court Bookings', to: '/bookings', icon: CalendarCheck, badge: 'Live' },
     ],
   },
   {
     label: 'Commerce & Facilities',
     items: [
+      { name: 'Vendors & Partners', to: '/admin/vendors', icon: Store },
       { name: 'Equipment Inventory', to: '/inventory', icon: Boxes },
       { name: 'Pro Shop (POS)', to: '/shop', icon: ShoppingBag },
       { name: 'Bar & Cafeteria', to: '/cafeteria', icon: Coffee },
@@ -65,6 +67,8 @@ const navigationGroups: NavGroup[] = [
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
+  const { user } = useAuth();
+
   return (
     <>
       {/* Mobile backdrop */}
@@ -78,31 +82,32 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
       {/* Sidebar container */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-[#0b132b] text-slate-300 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-[#101316] border-r border-[#25292D] text-slate-300 transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {/* Brand Header */}
-        <div className="flex h-16 items-center justify-between border-b border-slate-800/80 px-6">
+        <div className="flex h-16 items-center justify-between border-b border-[#25292D] px-6">
           <NavLink to="/dashboard" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 text-white shadow-lg shadow-emerald-950/50">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#C7FF36] text-slate-950 font-black shadow-lg shadow-[#C7FF36]/20">
               <Activity className="h-5 w-5" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-bold tracking-tight text-white text-base">Champions</span>
-                <span className="rounded bg-emerald-500/20 px-1.5 py-0.2 text-[10px] font-semibold text-emerald-400 border border-emerald-500/30">
-                  SCMS
+                <span className="font-bold tracking-tight text-white text-base">Apex</span>
+                <span className="text-[#C7FF36] font-bold text-base">Sports</span>
+                <span className="rounded bg-[#C7FF36]/15 px-1.5 py-0.2 text-[10px] font-bold text-[#C7FF36] border border-[#C7FF36]/30">
+                  ADMIN
                 </span>
               </div>
-              <p className="text-[11px] font-medium text-slate-400">Champions Club Management</p>
+              <p className="text-[11px] font-medium text-slate-400">Club Management System</p>
             </div>
           </NavLink>
           <button
             onClick={onClose}
             type="button"
             aria-label="Close sidebar"
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden cursor-pointer"
+            className="rounded-lg p-1 text-slate-400 hover:bg-[#25292D] hover:text-white lg:hidden cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
@@ -112,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         <div className="flex-1 overflow-y-auto px-4 py-5 space-y-6">
           {navigationGroups.map((group) => (
             <div key={group.label} className="space-y-1">
-              <h3 className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              <h3 className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 {group.label}
               </h3>
               <div className="mt-2 space-y-0.5">
@@ -126,8 +131,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                       className={({ isActive }) =>
                         `group flex items-center justify-between rounded-lg px-3 py-2.5 text-xs font-medium transition-all ${
                           isActive
-                            ? 'bg-emerald-600/15 text-white font-semibold shadow-xs border-l-2 border-emerald-500'
-                            : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
+                            ? 'bg-[#C7FF36]/15 text-white font-semibold border-l-2 border-[#C7FF36]'
+                            : 'text-slate-400 hover:bg-[#171A1D] hover:text-slate-100'
                         }`
                       }
                     >
@@ -137,7 +142,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                             <Icon
                               className={`h-4 w-4 transition-colors ${
                                 isActive
-                                  ? 'text-emerald-400'
+                                  ? 'text-[#C7FF36]'
                                   : 'text-slate-400 group-hover:text-slate-200'
                               }`}
                             />
@@ -147,8 +152,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                             <span
                               className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                                 isActive
-                                  ? 'bg-emerald-500 text-white'
-                                  : 'bg-slate-800 text-slate-300'
+                                  ? 'bg-[#C7FF36] text-slate-950'
+                                  : 'bg-[#25292D] text-slate-300'
                               }`}
                             >
                               {item.badge}
@@ -165,21 +170,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         </div>
 
         {/* Sidebar Footer */}
-        <div className="border-t border-slate-800/80 p-4">
-          <div className="flex items-center justify-between rounded-lg bg-slate-900/80 p-3 border border-slate-800">
+        <div className="border-t border-[#25292D] p-4 bg-[#171A1D]/60">
+          <div className="flex items-center justify-between rounded-lg bg-[#171A1D] p-3 border border-[#25292D]">
             <div className="flex items-center gap-2.5">
               <div className="relative">
-                <div className="h-8 w-8 rounded-full bg-emerald-600/30 flex items-center justify-center font-bold text-xs text-emerald-400 border border-emerald-500/40">
-                  SC
+                <div className="h-8 w-8 rounded-full bg-[#C7FF36]/20 flex items-center justify-center font-bold text-xs text-[#C7FF36] border border-[#C7FF36]/40">
+                  {user?.firstName?.slice(0, 1) || 'A'}
                 </div>
-                <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-[#0b132b]" />
+                <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-[#C7FF36] ring-2 ring-[#101316]" />
               </div>
-              <div>
-                <p className="text-xs font-semibold text-white">Saran & Asim</p>
-                <p className="text-[10px] text-slate-400">Phase 1 Architecture</p>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-white truncate">{user?.fullName || user?.email}</p>
+                <p className="text-[10px] text-[#C7FF36] font-medium">Club Administrator</p>
               </div>
             </div>
-            <ChevronRight className="h-4 w-4 text-slate-500" />
           </div>
         </div>
       </aside>
