@@ -20,7 +20,7 @@ import {
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, register, loginWithGoogle } = useAuth();
+  const { login, register, loginWithGoogle, error: authError } = useAuth();
 
   // Mode: 'login' | 'register'
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -38,6 +38,13 @@ export const LoginPage: React.FC = () => {
   // Status & Error
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Sync auth context error
+  useEffect(() => {
+    if (authError) {
+      setErrorMessage(authError);
+    }
+  }, [authError]);
 
   // Sync mode with query param if present (?mode=register or ?register=true)
   useEffect(() => {
@@ -66,6 +73,8 @@ export const LoginPage: React.FC = () => {
                   } catch {
                     navigate('/customer/dashboard', { replace: true });
                   }
+                } else {
+                  setErrorMessage(authError || 'Google authentication failed.');
                 }
               } catch (err: any) {
                 setErrorMessage(err.message || 'Google authentication failed.');
@@ -126,6 +135,8 @@ export const LoginPage: React.FC = () => {
 
         if (success) {
           navigate('/customer/dashboard', { replace: true });
+        } else {
+          setErrorMessage(authError || 'Registration failed. Please try again.');
         }
       } catch (err: any) {
         setErrorMessage(err.response?.data?.detail || err.message || 'Registration failed.');
@@ -153,6 +164,8 @@ export const LoginPage: React.FC = () => {
           } catch {
             navigate('/customer/dashboard', { replace: true });
           }
+        } else {
+          setErrorMessage(authError || 'Invalid email or password.');
         }
       } catch (err: any) {
         setErrorMessage(

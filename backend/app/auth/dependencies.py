@@ -162,7 +162,7 @@ def require_permission(permission_code: str) -> Callable:
         roles, permissions = get_user_roles_and_permissions(db, current_user.id)
 
         # Admin role bypasses granular permissions
-        if "Admin" in roles or permission_code in permissions:
+        if any(r.upper() == "ADMIN" for r in roles) or permission_code in permissions:
             return current_user
 
         # Record unauthorized privilege escalation attempt

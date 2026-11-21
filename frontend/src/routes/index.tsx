@@ -47,7 +47,7 @@ export const router = createBrowserRouter([
   // Default route points to Home (Landing Page)
   {
     path: '/',
-    element: <Navigate to="/customer/dashboard" replace />,
+    element: <LandingPage />,
   },
   {
     path: '/landing',

@@ -47,9 +47,15 @@ export const CustomerLayout: React.FC = () => {
     { name: 'Shop', to: '/customer/shop' },
   ];
 
-  const displayName = user?.firstName
-    ? `${user.firstName} ${user.lastName ? user.lastName[0] + '.' : 'S.'}`
-    : 'Saranjeet S.';
+  const displayName = user
+    ? user.fullName || `${user.firstName} ${user.lastName}`.trim() || user.email
+    : 'Member';
+  const displayEmail = user?.email || '';
+  const userInitials = user?.firstName
+    ? `${user.firstName[0]}${user.lastName ? user.lastName[0] : ''}`.toUpperCase()
+    : user?.email
+    ? user.email.slice(0, 2).toUpperCase()
+    : 'AP';
 
   return (
     <div
@@ -179,16 +185,16 @@ export const CustomerLayout: React.FC = () => {
                   isDark ? 'hover:bg-[#1E242E]' : 'hover:bg-slate-200/50'
                 }`}
               >
-                <div className="h-7 w-7 rounded-full overflow-hidden border border-[#CCFF00]/60 bg-emerald-700 flex items-center justify-center text-white text-xs font-bold shadow-sm">
-                  <img
-                    src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80"
-                    alt="User"
-                    className="h-full w-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
-                  />
-                  <span>S</span>
+                <div className="h-7 w-7 rounded-full overflow-hidden border border-[#CCFF00]/60 bg-[#1E242E] flex items-center justify-center text-[#CCFF00] text-xs font-bold shadow-sm">
+                  {user?.avatarUrl ? (
+                    <img
+                      src={user.avatarUrl}
+                      alt={displayName}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span>{userInitials}</span>
+                  )}
                 </div>
                 <span
                   className={`text-xs font-semibold hidden sm:inline-block ${
@@ -214,11 +220,11 @@ export const CustomerLayout: React.FC = () => {
                   <div className="px-3 py-2 border-b border-slate-700/20 mb-1">
                     <p className="text-xs font-bold">{displayName}</p>
                     <p className="text-[11px] text-slate-400 truncate">
-                      {user?.email || 'saranjeet@apexclub.com'}
+                      {displayEmail}
                     </p>
                     <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#CCFF00]/15 text-[#88B000] text-[10px] font-bold">
                       <ShieldCheck className="h-3 w-3" />
-                      <span>Premium Active Member</span>
+                      <span>{user?.role || 'Customer'} Member</span>
                     </div>
                   </div>
                   <NavLink

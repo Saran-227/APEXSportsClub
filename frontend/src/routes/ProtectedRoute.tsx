@@ -23,10 +23,6 @@ export const ProtectedRoute: React.FC<{
   }
 
   if (!isAuthenticated || !user) {
-    // Allow seamless previewing of customer portal pages during development
-    if (location.pathname.startsWith('/customer')) {
-      return <>{children}</>;
-    }
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

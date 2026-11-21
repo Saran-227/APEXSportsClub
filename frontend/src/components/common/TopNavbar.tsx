@@ -121,15 +121,26 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar }) => {
             className="flex items-center gap-2.5 rounded-lg p-1.5 hover:bg-[#25292D] cursor-pointer transition text-left"
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#C7FF36] text-slate-950 font-bold text-xs shadow">
-              {user ? user.fullName.slice(0, 2).toUpperCase() : 'AP'}
+              {user ? (
+                user.fullName
+                  ? user.fullName
+                      .split(' ')
+                      .map((n) => n[0])
+                      .join('')
+                      .slice(0, 2)
+                      .toUpperCase()
+                  : user.email.slice(0, 2).toUpperCase()
+              ) : (
+                'AP'
+              )}
             </div>
             <div className="hidden sm:block">
               <p className="text-xs font-semibold text-white">
-                {user ? user.fullName : 'Vikram Malhotra'}
+                {user ? user.fullName || user.email : 'User'}
               </p>
               <div className="flex items-center gap-1">
                 <span className="text-[10px] text-[#C7FF36] font-bold">
-                  {user ? user.role : 'ADMIN'}
+                  {user ? user.role : 'MEMBER'}
                 </span>
                 <ShieldCheck className="h-3 w-3 text-[#C7FF36]" />
               </div>
@@ -140,21 +151,21 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onToggleSidebar }) => {
             <div className="absolute right-0 mt-2 w-56 rounded-xl border border-[#25292D] bg-[#171A1D] p-2 shadow-2xl z-50">
               <div className="px-3 py-2 border-b border-[#25292D] mb-1">
                 <p className="text-xs font-bold text-white">
-                  {user ? user.fullName : 'Vikram Malhotra'}
+                  {user ? user.fullName || 'User' : 'User'}
                 </p>
                 <p className="text-[11px] text-slate-400 truncate">
-                  {user ? user.email : 'admin@apexsports.com'}
+                  {user ? user.email : ''}
                 </p>
               </div>
 
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 hover:bg-[#25292D] cursor-pointer">
                   <UserIcon className="h-4 w-4 text-slate-400" />
-                  <span>Admin Profile</span>
+                  <span>{user?.role ? `${user.role} Profile` : 'User Profile'}</span>
                 </div>
                 <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 hover:bg-[#25292D] cursor-pointer">
                   <CheckCircle2 className="h-4 w-4 text-[#C7FF36]" />
-                  <span>PostgreSQL Active</span>
+                  <span>Database Connected</span>
                 </div>
               </div>
 

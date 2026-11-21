@@ -4,7 +4,14 @@ import type { User, LoginCredentials } from '../types';
 import { AuthContext } from './authContextDef';
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem('scms_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,10 +30,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const currentUser = await authApi.getCurrentUser();
         if (isMounted) {
           setUser(currentUser);
+          localStorage.setItem('scms_user', JSON.stringify(currentUser));
         }
       } catch {
         if (isMounted) {
           setUser(null);
+          localStorage.removeItem('scms_user');
         }
       } finally {
         if (isMounted) {
@@ -48,6 +57,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const response = await authApi.login(credentials);
       setUser(response.user);
+      localStorage.setItem('scms_user', JSON.stringify(response.user));
       return true;
     } catch (err) {
       const normalized = normalizeApiError(err);
@@ -64,6 +74,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const response = await authApi.loginWithGoogle(credential);
       setUser(response.user);
+      localStorage.setItem('scms_user', JSON.stringify(response.user));
       return true;
     } catch (err) {
       const normalized = normalizeApiError(err);
@@ -92,6 +103,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         password: userData.password || 'ApexMember@123',
       });
       setUser(response.user);
+      localStorage.setItem('scms_user', JSON.stringify(response.user));
       return true;
     } catch (err) {
       const normalized = normalizeApiError(err);
@@ -110,6 +122,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Clean local session state even if network logout fails
     } finally {
       setUser(null);
+      localStorage.removeItem('scms_user');
       setIsLoading(false);
     }
   };

@@ -1,5 +1,6 @@
 """SQLAlchemy 2.x database engine, base models, and session management."""
 import logging
+from pathlib import Path
 from typing import Generator
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -50,8 +51,9 @@ def create_db_engine(db_url: str | None = None, fallback_on_unreachable: bool | 
                 target_url.split("@")[-1] if "@" in target_url else target_url,
                 type(exc).__name__,
             )
+            db_path = Path(__file__).resolve().parents[3] / "scms.db"
             return create_engine(
-                "sqlite:///./scms.db",
+                f"sqlite:///{db_path}",
                 connect_args={"check_same_thread": False},
             )
 
