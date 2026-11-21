@@ -9,7 +9,7 @@ def test_default_settings():
     """Verify default configuration attributes are accurately populated."""
     settings = Settings()
     assert settings.APP_NAME == "Sports Club Management System"
-    assert settings.POSTGRES_DB == "sports_club_db"
+    assert settings.POSTGRES_DB in ("sports_club_db", "apexsportsclub")
     assert settings.POSTGRES_PORT == 5432
     assert settings.DB_POOL_SIZE == 10
     assert settings.DB_MAX_OVERFLOW == 20

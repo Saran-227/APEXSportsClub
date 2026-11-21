@@ -21,7 +21,8 @@ def create_db_engine(db_url: str | None = None, fallback_on_unreachable: bool | 
     settings = get_settings()
     target_url = db_url or settings.sqlalchemy_database_url
     if fallback_on_unreachable is None:
-        fallback_on_unreachable = db_url is None
+        # Only fallback if DATABASE_URL was not explicitly set and not in production
+        fallback_on_unreachable = db_url is None and not settings.DATABASE_URL and settings.APP_ENV != "production"
 
     if target_url.startswith("sqlite"):
         # SQLite configuration (primarily for fast, isolated unit/integration tests)
