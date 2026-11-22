@@ -89,7 +89,7 @@ def get_courts(
     if sport:
         clean_sport = sport.strip().lower()
         query = query.filter(Court.sport == clean_sport)
-    return query.all()
+    return query.order_by(Court.created_at.desc(), Court.id.desc()).all()
 
 
 @router.get("/courts/{court_id}/availability", response_model=CourtAvailabilityResponse)
@@ -223,10 +223,15 @@ def create_booking(
             detail="Conflict Detected: This court is already reserved during the selected time slot. Please pick another slot.",
         )
 
-    # 5. Calculate membership discount if member
+    # 5. Calculate membership discount if member (validating active status and expiry)
     member = db.query(Member).filter(Member.user_id == current_user.id).first()
     discount_amount = Decimal("0.00")
-    if member and member.current_plan and member.status == "ACTIVE":
+    is_active_member = (
+        member
+        and member.status == "ACTIVE"
+        and (member.expiry_date is None or member.expiry_date >= payload.booking_date)
+    )
+    if is_active_member and member.current_plan:
         discount_pct = Decimal(str(member.current_plan.court_discount_percent or 0.0)) / Decimal("100.0")
         discount_amount = court.hourly_rate * discount_pct
 
@@ -322,7 +327,7 @@ def list_bookings(
     if booking_date:
         query = query.filter(CourtBooking.booking_date == booking_date)
 
-    bookings = query.order_by(CourtBooking.start_time.desc()).limit(100).all()
+    bookings = query.order_by(CourtBooking.created_at.desc(), CourtBooking.id.desc()).limit(100).all()
 
     result = []
     for b in bookings:

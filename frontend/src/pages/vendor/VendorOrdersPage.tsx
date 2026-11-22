@@ -14,7 +14,12 @@ export const VendorOrdersPage: React.FC = () => {
     setIsLoading(true);
     shopApi
       .getOrders()
-      .then(setOrders)
+      .then((data) => {
+        const sorted = [...(data || [])].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        setOrders(sorted);
+      })
       .catch((err) => console.error(err))
       .finally(() => setIsLoading(false));
   };

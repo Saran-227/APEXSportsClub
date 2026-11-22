@@ -78,7 +78,7 @@ def list_enquiries_admin(
     if resolve_primary_role(roles) != "ADMIN":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    return db.query(CustomerEnquiry).order_by(CustomerEnquiry.created_at.desc()).all()
+    return db.query(CustomerEnquiry).order_by(CustomerEnquiry.created_at.desc(), CustomerEnquiry.id.desc()).all()
 
 
 @router.get("/crm/notifications", response_model=List[NotificationResponse])
@@ -97,7 +97,7 @@ def get_user_notifications(
             | (Notification.role_target == primary_role)
             | (Notification.role_target == None)
         )
-        .order_by(Notification.created_at.desc())
+        .order_by(Notification.created_at.desc(), Notification.id.desc())
         .limit(20)
         .all()
     )

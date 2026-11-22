@@ -118,7 +118,7 @@ def get_cafeteria_menu(
     query = db.query(MenuItem).filter(MenuItem.is_available == True)
     if category:
         query = query.filter(MenuItem.category.ilike(category.strip()))
-    return query.all()
+    return query.order_by(MenuItem.created_at.desc(), MenuItem.id.desc()).all()
 
 
 # --- Cafeteria Owner Menu Management ---
@@ -129,7 +129,12 @@ def get_owner_menu(
 ):
     """Cafeteria Owner: View all menu items including sold-out items."""
     cafe = get_cafeteria_for_user(db, current_user)
-    return db.query(MenuItem).filter(MenuItem.cafeteria_id == cafe.id).all()
+    return (
+        db.query(MenuItem)
+        .filter(MenuItem.cafeteria_id == cafe.id)
+        .order_by(MenuItem.created_at.desc(), MenuItem.id.desc())
+        .all()
+    )
 
 
 @router.post("/cafeteria/owner/menu", response_model=MenuItemResponse, status_code=status.HTTP_201_CREATED)
@@ -351,7 +356,7 @@ def list_cafeteria_orders(
     if status_filter:
         query = query.filter(FoodOrder.status == status_filter.upper())
 
-    orders = query.order_by(FoodOrder.created_at.desc()).limit(100).all()
+    orders = query.order_by(FoodOrder.created_at.desc(), FoodOrder.id.desc()).limit(100).all()
 
     result = []
     for o in orders:

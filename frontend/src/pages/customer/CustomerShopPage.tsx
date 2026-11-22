@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ShoppingBag,
+  Search,
   Percent,
   Heart,
   Package,
@@ -12,26 +14,105 @@ import {
   X,
   LayoutGrid,
   List,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
-import {
-  MOCK_FEATURED_PRODUCTS,
-  MOCK_ALL_PRODUCTS,
-  type MockProduct,
-} from '../../data/mockSportsData';
+import { useCart } from '../../context/CartContext';
+import { shopApi, normalizeApiError } from '../../services/api';
+import { MOCK_ALL_PRODUCTS } from '../../data/mockSportsData';
+
+interface ProductItem {
+  id: string;
+  name: string;
+  tagline: string;
+  category: string;
+  price: number;
+  stock_quantity?: number;
+  inStock: boolean;
+  image: string;
+  isFeatured?: boolean;
+  colors?: string[];
+  rating?: number;
+}
+
+const getCategoryFallbackImage = (category: string) => {
+  const cat = (category || '').toUpperCase();
+  if (cat.includes('RACKET')) return 'https://images.unsplash.com/photo-1617083934555-ac7d4fed8824?auto=format&fit=crop&w=800&q=80';
+  if (cat.includes('BALL')) return 'https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?auto=format&fit=crop&w=800&q=80';
+  if (cat.includes('SHOE')) return 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=800&q=80';
+  if (cat.includes('APPAREL') || cat.includes('CLOTH')) return 'https://images.unsplash.com/photo-1581655353564-df123a1eb820?auto=format&fit=crop&w=800&q=80';
+  if (cat.includes('SHUTTLE')) return 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&w=800&q=80';
+  return 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=800&q=80';
+};
 
 export const CustomerShopPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const targetProductId = searchParams.get('product') || '';
+  const initialSearch = searchParams.get('search') || '';
+
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<string>('Popular');
-  const [searchQuery] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>(initialSearch);
   const [wishlist, setWishlist] = useState<string[]>([]);
 
-  // Cart State
-  const [cartItems, setCartItems] = useState<Array<{ product: MockProduct; quantity: number }>>([
-    { product: MOCK_FEATURED_PRODUCTS[0], quantity: 1 },
-    { product: MOCK_FEATURED_PRODUCTS[1], quantity: 2 },
-  ]);
-  const [cartDrawerOpen, setCartDrawerOpen] = useState<boolean>(false);
-  const [checkoutComplete, setCheckoutComplete] = useState<boolean>(false);
+  // Real backend catalog state
+  const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
+  const [, setIsLoadingCatalog] = useState<boolean>(false);
+
+  // Sync search query and category from URL parameters
+  useEffect(() => {
+    const s = searchParams.get('search');
+    if (s !== null) {
+      setSearchQuery(s);
+    }
+    const cat = searchParams.get('category');
+    if (cat) {
+      setSelectedCategory(cat.toUpperCase());
+    }
+  }, [searchParams]);
+
+  // Global persistent cart context (defaults to [] and persists on reload)
+  const {
+    cartItems,
+    addToCart,
+    updateQuantity,
+    clearCart,
+    totalCartCount,
+    totalAmount,
+    cartDrawerOpen,
+    setCartDrawerOpen,
+  } = useCart();
+
+  // Checkout submission state
+  const [isCheckingOut, setIsCheckingOut] = useState<boolean>(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [orderSuccess, setOrderSuccess] = useState<{
+    orderNumber: string;
+    invoiceNumber?: string;
+  } | null>(null);
+
+  // Fetch real catalog from PostgreSQL backend
+  useEffect(() => {
+    let isMounted = true;
+    const fetchCatalog = async () => {
+      try {
+        setIsLoadingCatalog(true);
+        const products = await shopApi.getCatalog();
+        if (isMounted && products && products.length > 0) {
+          setCatalogProducts(products);
+        }
+      } catch (err) {
+        console.error('Failed to load shop catalog from backend:', err);
+      } finally {
+        if (isMounted) setIsLoadingCatalog(false);
+      }
+    };
+    fetchCatalog();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const categories = [
     'ALL',
@@ -42,6 +123,7 @@ export const CustomerShopPage: React.FC = () => {
     'BAGS',
     'ACCESSORIES',
     'SHOES',
+    'EQUIPMENT',
   ];
 
   const toggleWishlist = (id: string) => {
@@ -50,52 +132,110 @@ export const CustomerShopPage: React.FC = () => {
     );
   };
 
-  const addToCart = (product: MockProduct) => {
-    setCartItems((prev) => {
-      const existing = prev.find((item) => item.product.id === product.id);
-      if (existing) {
-        return prev.map((item) =>
-          item.product.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        );
+  // Map backend products if available; fallback to mock data
+  const allAvailableProducts: ProductItem[] = useMemo(() => {
+    if (catalogProducts.length > 0) {
+      return catalogProducts.map((p) => ({
+        id: p.id,
+        name: p.name,
+        tagline: p.description || `${p.category} • SKU ${p.sku}`,
+        category: p.category,
+        price: Number(p.price),
+        stock_quantity: p.stock_quantity,
+        inStock: p.stock_quantity > 0,
+        image: p.image_url || getCategoryFallbackImage(p.category),
+        isFeatured: p.stock_quantity > 5,
+        rating: 4.9,
+      }));
+    }
+    return MOCK_ALL_PRODUCTS.map((p) => ({
+      ...p,
+      stock_quantity: 10,
+    }));
+  }, [catalogProducts]);
+
+  // Featured Products slice
+  const featuredProducts: ProductItem[] = useMemo(() => {
+    const inStock = allAvailableProducts.filter((p) => p.inStock);
+    return inStock.slice(0, 3);
+  }, [allAvailableProducts]);
+
+  // Filter products by selected category and search
+  const filteredProducts = useMemo(() => {
+    return allAvailableProducts
+      .filter((product) => {
+        // If product is specifically targeted via URL, preserve it even if search query differs slightly
+        if (targetProductId && product.id === targetProductId) return true;
+
+        const matchesCategory =
+          selectedCategory === 'ALL' ||
+          product.category.toUpperCase() === selectedCategory;
+        const matchesSearch =
+          !searchQuery ||
+          product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          product.tagline.toLowerCase().includes(searchQuery.toLowerCase());
+        return matchesCategory && matchesSearch;
+      })
+      .sort((a, b) => {
+        // Always place targeted product first
+        if (targetProductId) {
+          if (a.id === targetProductId) return -1;
+          if (b.id === targetProductId) return 1;
+        }
+        if (sortBy === 'PriceLow') return a.price - b.price;
+        if (sortBy === 'PriceHigh') return b.price - a.price;
+        return 0;
+      });
+  }, [allAvailableProducts, selectedCategory, searchQuery, sortBy, targetProductId]);
+
+  // Auto-scroll to target product when selected via search or link
+  useEffect(() => {
+    if (targetProductId) {
+      const matchingProduct = allAvailableProducts.find((p) => p.id === targetProductId);
+      if (
+        matchingProduct &&
+        selectedCategory !== 'ALL' &&
+        matchingProduct.category.toUpperCase() !== selectedCategory
+      ) {
+        setSelectedCategory('ALL');
       }
-      return [...prev, { product, quantity: 1 }];
-    });
-    setCartDrawerOpen(true);
+
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`product-card-${targetProductId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [targetProductId, allAvailableProducts, selectedCategory]);
+
+  // Checkout order submission: calls backend API, persists in PostgreSQL & sends real email
+  const handleProceedToCheckout = async () => {
+    if (cartItems.length === 0) return;
+    try {
+      setIsCheckingOut(true);
+      setCheckoutError(null);
+      const res = await shopApi.createOrder({
+        items: cartItems.map((item) => ({
+          product_id: item.product.id,
+          quantity: item.quantity,
+        })),
+        fulfilment_type: 'PICKUP',
+      });
+
+      setOrderSuccess({
+        orderNumber: res.order_number,
+        invoiceNumber: res.invoice_number,
+      });
+      clearCart();
+    } catch (err) {
+      const errObj = normalizeApiError(err);
+      setCheckoutError(errObj.message || 'Failed to process checkout order.');
+    } finally {
+      setIsCheckingOut(false);
+    }
   };
-
-  const updateQuantity = (id: string, delta: number) => {
-    setCartItems((prev) =>
-      prev
-        .map((item) => {
-          if (item.product.id === id) {
-            const newQty = item.quantity + delta;
-            return newQty > 0 ? { ...item, quantity: newQty } : null;
-          }
-          return item;
-        })
-        .filter(Boolean) as Array<{ product: MockProduct; quantity: number }>
-    );
-  };
-
-  const totalCartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
-  const totalAmount = cartItems.reduce(
-    (acc, item) => acc + item.product.price * item.quantity,
-    0
-  );
-
-  // Filter products
-  const filteredProducts = MOCK_ALL_PRODUCTS.filter((product) => {
-    const matchesCategory =
-      selectedCategory === 'ALL' ||
-      product.category.toUpperCase() === selectedCategory;
-    const matchesSearch =
-      !searchQuery ||
-      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.tagline.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
 
   return (
     <div className="space-y-8 animate-fadeIn pb-12">
@@ -185,7 +325,6 @@ export const CustomerShopPage: React.FC = () => {
 
           {/* 4 Quick Action Buttons (2x2 Grid) */}
           <div className="grid grid-cols-2 gap-2.5 pt-1">
-            {/* Button 1: SHOP GEAR (Lime Filled) */}
             <button
               type="button"
               className="bg-[#CCFF00] text-slate-950 p-3.5 rounded-2xl flex flex-col items-center justify-center gap-1.5 shadow-md shadow-[#CCFF00]/20 font-bold transition hover:bg-[#bbf000] cursor-pointer"
@@ -194,7 +333,6 @@ export const CustomerShopPage: React.FC = () => {
               <span className="text-[11px] font-black tracking-wide uppercase">SHOP GEAR</span>
             </button>
 
-            {/* Button 2: DEALS & OFFERS */}
             <button
               type="button"
               className="bg-[#143B2D] border border-emerald-600/30 text-white p-3.5 rounded-2xl flex flex-col items-center justify-center gap-1.5 font-bold transition hover:bg-[#1a4a39] cursor-pointer"
@@ -203,7 +341,6 @@ export const CustomerShopPage: React.FC = () => {
               <span className="text-[11px] font-black tracking-wide uppercase">DEALS & OFFERS</span>
             </button>
 
-            {/* Button 3: MY WISHLIST */}
             <button
               type="button"
               onClick={() => setSelectedCategory('ALL')}
@@ -213,14 +350,15 @@ export const CustomerShopPage: React.FC = () => {
               <span className="text-[11px] font-black tracking-wide uppercase">MY WISHLIST</span>
             </button>
 
-            {/* Button 4: MY ORDERS */}
             <button
               type="button"
               onClick={() => setCartDrawerOpen(true)}
               className="bg-white text-slate-900 p-3.5 rounded-2xl flex flex-col items-center justify-center gap-1.5 font-bold transition hover:bg-slate-50 cursor-pointer shadow-sm border border-[#E8E2D5]"
             >
               <Package className="h-5 w-5 text-slate-800" />
-              <span className="text-[11px] font-black tracking-wide uppercase">MY ORDERS</span>
+              <span className="text-[11px] font-black tracking-wide uppercase">
+                MY CART ({totalCartCount})
+              </span>
             </button>
           </div>
         </div>
@@ -229,7 +367,6 @@ export const CustomerShopPage: React.FC = () => {
         <div className="lg:col-span-8 space-y-6">
           {/* Top Hero Banner with Slanted Tennis Court & Ball */}
           <div className="relative rounded-3xl overflow-hidden bg-[#FAF7F2] border border-[#E8E2D5] min-h-[160px] sm:min-h-[180px] flex items-center p-6 sm:p-8 shadow-sm">
-            {/* Slanted Right Image Slice */}
             <div
               className="absolute right-0 top-0 bottom-0 w-1/2 sm:w-5/12 bg-cover bg-center"
               style={{
@@ -252,25 +389,73 @@ export const CustomerShopPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Category Filter Pills */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-            {categories.map((cat) => {
-              const isActive = selectedCategory === cat;
-              return (
+          {/* Search Query Filter Notification */}
+          {searchQuery && (
+            <div className="flex items-center justify-between rounded-2xl bg-[#0A3022] text-white px-4 py-2.5 text-xs shadow-md border border-emerald-800">
+              <div className="flex items-center gap-2">
+                <Search className="h-4 w-4 text-[#CCFF00] shrink-0" />
+                <span>
+                  Showing shop results for <strong className="text-[#CCFF00]">"{searchQuery}"</strong> ({filteredProducts.length} items found)
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSearchParams({});
+                }}
+                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition flex items-center gap-1 cursor-pointer"
+              >
+                <span>Clear Filter</span>
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+
+          {/* Category Filter Pills & Search Input */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+              {categories.map((cat) => {
+                const isActive = selectedCategory === cat;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-4 py-2 rounded-full text-xs font-bold transition shrink-0 cursor-pointer uppercase ${
+                      isActive
+                        ? 'bg-[#CCFF00] text-slate-950 shadow-sm border border-[#bbf000]'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="relative min-w-[200px] sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Filter shop products..."
+                className="w-full pl-8 pr-8 py-1.5 rounded-full bg-white border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#CCFF00]"
+              />
+              {searchQuery && (
                 <button
-                  key={cat}
                   type="button"
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-4 py-2 rounded-full text-xs font-bold transition shrink-0 cursor-pointer uppercase ${
-                    isActive
-                      ? 'bg-[#CCFF00] text-slate-950 shadow-sm border border-[#bbf000]'
-                      : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300'
-                  }`}
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchParams({});
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
-                  {cat}
+                  <X className="h-3.5 w-3.5" />
                 </button>
-              );
-            })}
+              )}
+            </div>
           </div>
 
           {/* Section: FEATURED PRODUCTS */}
@@ -288,47 +473,69 @@ export const CustomerShopPage: React.FC = () => {
               </button>
             </div>
 
-            {/* 3 Featured Products in a row */}
+            {/* Featured Products Row */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {MOCK_FEATURED_PRODUCTS.map((prod) => (
-                <div
-                  key={prod.id}
-                  className="bg-white rounded-3xl p-4 border border-[#E8E2D5] shadow-sm hover:shadow-md transition flex flex-col justify-between group"
-                >
-                  {/* Photo container */}
-                  <div className="h-44 rounded-2xl bg-[#F8F5EE] flex items-center justify-center p-3 mb-3.5 overflow-hidden">
-                    <img
-                      src={prod.image}
-                      alt={prod.name}
-                      className="h-full w-full object-contain group-hover:scale-105 transition duration-300"
-                    />
-                  </div>
+              {featuredProducts.map((prod) => {
+                const isTarget = targetProductId === prod.id;
+                return (
+                  <div
+                    key={prod.id}
+                    id={`product-card-${prod.id}`}
+                    className={`bg-white rounded-3xl p-4 border transition flex flex-col justify-between group relative ${
+                      isTarget
+                        ? 'border-[#CCFF00] ring-4 ring-[#CCFF00] shadow-xl shadow-[#CCFF00]/25 scale-[1.02]'
+                        : 'border-[#E8E2D5] shadow-sm hover:shadow-md'
+                    }`}
+                  >
+                    {isTarget && (
+                      <div className="absolute -top-2.5 left-4 z-20 px-2.5 py-0.5 rounded-full bg-[#CCFF00] text-slate-950 font-black text-[10px] uppercase tracking-wider shadow-md animate-pulse">
+                        Selected Product
+                      </div>
+                    )}
+                    {/* Photo container */}
+                    <div className="h-44 rounded-2xl bg-[#F8F5EE] flex items-center justify-center p-3 mb-3.5 overflow-hidden">
+                      <img
+                        src={prod.image}
+                        alt={prod.name}
+                        className="h-full w-full object-contain group-hover:scale-105 transition duration-300"
+                      />
+                    </div>
 
-                  {/* Info */}
-                  <div className="space-y-1">
-                    <h3 className="text-xs font-black uppercase tracking-wide text-slate-950">
-                      {prod.name}
-                    </h3>
-                    <p className="text-[11px] text-slate-500">{prod.tagline}</p>
-                  </div>
+                    {/* Info */}
+                    <div className="space-y-1">
+                      <h3 className="text-xs font-black uppercase tracking-wide text-slate-950">
+                        {prod.name}
+                      </h3>
+                      <p className="text-[11px] text-slate-500">{prod.tagline}</p>
+                    </div>
 
-                  {/* Price + Lime Cart Button */}
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-100 mt-3">
-                    <span className="text-base font-black text-slate-950">
-                      ₹{prod.price.toLocaleString('en-IN')}
-                    </span>
+                    {/* Price + Lime Cart Button */}
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100 mt-3">
+                      <span className="text-base font-black text-slate-950">
+                        ₹{prod.price.toLocaleString('en-IN')}
+                      </span>
 
-                    <button
-                      type="button"
-                      onClick={() => addToCart(prod)}
-                      className="h-9 w-9 rounded-xl bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 flex items-center justify-center transition shadow-sm cursor-pointer"
-                      title="Add to cart"
-                    >
-                      <ShoppingCart className="h-4 w-4" />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          addToCart({
+                            id: prod.id,
+                            name: prod.name,
+                            price: prod.price,
+                            category: prod.category,
+                            image: prod.image,
+                            stock_quantity: prod.stock_quantity,
+                          })
+                        }
+                        className="h-9 w-9 rounded-xl bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 flex items-center justify-center transition shadow-sm cursor-pointer"
+                        title="Add to cart"
+                      >
+                        <ShoppingCart className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -364,16 +571,26 @@ export const CustomerShopPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Grid of All Products (25+ products with mock sports photos!) */}
+            {/* Grid of All Products */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
               {filteredProducts.map((prod) => {
                 const isWished = wishlist.includes(prod.id);
+                const isTarget = targetProductId === prod.id;
                 return (
                   <div
                     key={prod.id}
-                    className="bg-white rounded-2xl p-3 border border-[#E8E2D5] shadow-sm hover:shadow-md transition flex flex-col justify-between group relative"
+                    id={`product-card-${prod.id}`}
+                    className={`bg-white rounded-2xl p-3 border transition flex flex-col justify-between group relative ${
+                      isTarget
+                        ? 'border-[#CCFF00] ring-4 ring-[#CCFF00] shadow-xl shadow-[#CCFF00]/25 scale-[1.02]'
+                        : 'border-[#E8E2D5] shadow-sm hover:shadow-md'
+                    }`}
                   >
-                    {/* Wishlist Heart Icon */}
+                    {isTarget && (
+                      <div className="absolute -top-2 left-3 z-20 px-2 py-0.5 rounded-full bg-[#CCFF00] text-slate-950 font-black text-[9px] uppercase tracking-wider shadow-md animate-pulse">
+                        Selected Product
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => toggleWishlist(prod.id)}
@@ -402,19 +619,6 @@ export const CustomerShopPage: React.FC = () => {
                         {prod.name}
                       </h3>
                       <p className="text-[10px] text-slate-500 truncate">{prod.tagline}</p>
-
-                      {/* Color dots if present */}
-                      {prod.colors && prod.colors.length > 0 && (
-                        <div className="flex items-center gap-1 pt-1">
-                          {prod.colors.map((c, idx) => (
-                            <span
-                              key={idx}
-                              className="h-2 w-2 rounded-full border border-slate-300"
-                              style={{ backgroundColor: c }}
-                            />
-                          ))}
-                        </div>
-                      )}
                     </div>
 
                     {/* Price + Lime Cart Button */}
@@ -425,7 +629,16 @@ export const CustomerShopPage: React.FC = () => {
 
                       <button
                         type="button"
-                        onClick={() => addToCart(prod)}
+                        onClick={() =>
+                          addToCart({
+                            id: prod.id,
+                            name: prod.name,
+                            price: prod.price,
+                            category: prod.category,
+                            image: prod.image,
+                            stock_quantity: prod.stock_quantity,
+                          })
+                        }
                         className="h-7 w-7 rounded-lg bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 flex items-center justify-center transition shadow-sm cursor-pointer"
                         title="Add to cart"
                       >
@@ -454,19 +667,57 @@ export const CustomerShopPage: React.FC = () => {
               </div>
               <button
                 type="button"
-                onClick={() => setCartDrawerOpen(false)}
+                onClick={() => {
+                  setCartDrawerOpen(false);
+                  setCheckoutError(null);
+                  setOrderSuccess(null);
+                }}
                 className="p-1 rounded-full hover:bg-slate-100 text-slate-500"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Drawer Items */}
+            {/* Drawer Body */}
             <div className="p-5 flex-1 overflow-y-auto space-y-4">
+              {/* Success Banner if order completed */}
+              {orderSuccess && (
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-slate-900 space-y-2 animate-fadeIn">
+                  <div className="flex items-center gap-2 text-emerald-800 font-black">
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                    <span>ORDER CONFIRMED & INVOICED!</span>
+                  </div>
+                  <p className="text-xs text-slate-700">
+                    Order Ref: <span className="font-bold">{orderSuccess.orderNumber}</span>
+                  </p>
+                  {orderSuccess.invoiceNumber && (
+                    <p className="text-xs text-slate-700">
+                      Invoice: <span className="font-bold">{orderSuccess.invoiceNumber}</span>
+                    </p>
+                  )}
+                  <p className="text-[11px] text-emerald-700 font-semibold pt-1">
+                    ✓ Transaction saved to PostgreSQL in real-time.
+                    <br />
+                    ✓ PDF invoice dispatched to your registered email!
+                  </p>
+                </div>
+              )}
+
+              {/* Error banner if checkout failed */}
+              {checkoutError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2 animate-shake">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                  <span>{checkoutError}</span>
+                </div>
+              )}
+
               {cartItems.length === 0 ? (
                 <div className="py-20 text-center text-slate-400 space-y-2">
                   <ShoppingBag className="h-10 w-10 mx-auto text-slate-300" />
                   <p className="text-xs font-semibold">Your cart is empty.</p>
+                  <p className="text-[11px] text-slate-400">
+                    Select gear from the shop to start your order.
+                  </p>
                 </div>
               ) : (
                 cartItems.map(({ product, quantity }) => (
@@ -475,7 +726,7 @@ export const CustomerShopPage: React.FC = () => {
                     className="flex items-center justify-between gap-3 p-3 rounded-2xl border border-slate-200 bg-slate-50"
                   >
                     <img
-                      src={product.image}
+                      src={product.image || getCategoryFallbackImage(product.category)}
                       alt={product.name}
                       className="h-14 w-14 rounded-xl object-contain bg-white p-1"
                     />
@@ -491,14 +742,14 @@ export const CustomerShopPage: React.FC = () => {
                     <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg p-1">
                       <button
                         onClick={() => updateQuantity(product.id, -1)}
-                        className="p-1 hover:bg-slate-100 rounded text-slate-600"
+                        className="p-1 hover:bg-slate-100 rounded text-slate-600 cursor-pointer"
                       >
                         <Minus className="h-3 w-3" />
                       </button>
                       <span className="text-xs font-bold px-1">{quantity}</span>
                       <button
                         onClick={() => updateQuantity(product.id, 1)}
-                        className="p-1 hover:bg-slate-100 rounded text-slate-600"
+                        className="p-1 hover:bg-slate-100 rounded text-slate-600 cursor-pointer"
                       >
                         <Plus className="h-3 w-3" />
                       </button>
@@ -513,30 +764,37 @@ export const CustomerShopPage: React.FC = () => {
               <div className="p-5 border-t border-slate-200 space-y-3 bg-slate-50">
                 <div className="flex items-center justify-between text-xs text-slate-600">
                   <span>Subtotal</span>
-                  <span className="font-bold text-slate-900">₹{totalAmount.toLocaleString('en-IN')}</span>
+                  <span className="font-bold text-slate-900">
+                    ₹{totalAmount.toLocaleString('en-IN')}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-600">
                   <span>Member Club Discount (10%)</span>
-                  <span className="font-bold text-emerald-700">-₹{Math.round(totalAmount * 0.1).toLocaleString('en-IN')}</span>
+                  <span className="font-bold text-emerald-700">
+                    -₹{Math.round(totalAmount * 0.1).toLocaleString('en-IN')}
+                  </span>
                 </div>
                 <div className="border-t border-slate-200 pt-2 flex items-center justify-between text-sm font-extrabold text-slate-950">
                   <span>Total Amount</span>
-                  <span className="text-base text-emerald-700">₹{Math.round(totalAmount * 0.9).toLocaleString('en-IN')}</span>
+                  <span className="text-base text-emerald-700">
+                    ₹{Math.round(totalAmount * 0.9).toLocaleString('en-IN')}
+                  </span>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setCheckoutComplete(true);
-                    setTimeout(() => {
-                      setCartItems([]);
-                      setCheckoutComplete(false);
-                      setCartDrawerOpen(false);
-                    }, 2000);
-                  }}
-                  className="w-full py-3 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 text-xs font-extrabold transition shadow-md shadow-[#CCFF00]/25 cursor-pointer uppercase tracking-wider"
+                  disabled={isCheckingOut}
+                  onClick={handleProceedToCheckout}
+                  className="w-full py-3.5 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] disabled:bg-slate-200 disabled:text-slate-500 text-slate-950 text-xs font-extrabold transition shadow-md shadow-[#CCFF00]/25 cursor-pointer uppercase tracking-wider flex items-center justify-center gap-2"
                 >
-                  {checkoutComplete ? 'Order Placed Successfully!' : 'Proceed to Checkout'}
+                  {isCheckingOut ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-slate-950" />
+                      <span>Processing & Generating Invoice...</span>
+                    </>
+                  ) : (
+                    <span>Proceed to Checkout</span>
+                  )}
                 </button>
               </div>
             )}

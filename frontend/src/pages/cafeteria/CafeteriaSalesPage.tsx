@@ -20,7 +20,10 @@ export const CafeteriaSalesPage: React.FC = () => {
           cafeteriaApi.getOrders(),
         ]);
         setAnalytics(aData);
-        setOrders(oData);
+        const sortedOrders = [...(oData || [])].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        setOrders(sortedOrders);
       } catch (err) {
         console.error('Failed to load cafeteria analytics', err);
       } finally {

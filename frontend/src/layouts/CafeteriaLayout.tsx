@@ -30,8 +30,8 @@ export const CafeteriaLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#101316] text-slate-100 font-sans flex flex-col">
-      {/* Top Header */}
-      <header className="sticky top-0 z-50 bg-[#171A1D]/90 backdrop-blur-md border-b border-[#25292D] px-4 sm:px-8">
+      {/* Top Header: Transparent all the time */}
+      <header className="sticky top-0 z-50 bg-transparent backdrop-blur-md border-b border-white/5 px-4 sm:px-8">
         <div className="max-w-7xl mx-auto flex h-16 items-center justify-between">
           <div className="flex items-center gap-6">
             <NavLink to="/cafeteria/dashboard" className="flex items-center gap-3">

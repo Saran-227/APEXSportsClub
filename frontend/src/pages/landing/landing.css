@@ -98,15 +98,16 @@
   width: 100%;
   z-index: 1000;
   padding: 1.5rem 0;
+  background: transparent !important;
   transition: var(--transition-smooth);
 }
 
 .site-header.scrolled {
   padding: 1rem 0;
-  background: rgba(5, 6, 7, 0.88);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border-subtle);
+  background: transparent !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .header-container {
@@ -1016,19 +1017,20 @@
   border: 2px solid rgba(198, 255, 0, 0.45);
 }
 
-/* Court Photo Background with LOW OPACITY */
+/* Court Photo Background - Brighter & More Vivid */
 .court-photo-bg {
   position: absolute;
   inset: 0;
   background-size: cover;
   background-position: center;
-  opacity: 0.28; /* Less opacity as requested */
-  filter: contrast(1.15) brightness(0.9);
-  transition: opacity 0.5s ease, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 0.58;
+  filter: contrast(1.10) brightness(1.28) saturate(1.15);
+  transition: opacity 0.5s ease, filter 0.5s ease, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .court-visual-card:hover .court-photo-bg {
-  opacity: 0.42; /* Subtle lift on hover */
+  opacity: 0.76;
+  filter: contrast(1.12) brightness(1.38) saturate(1.22);
   transform: scale(1.04);
 }
 
@@ -1041,7 +1043,13 @@
   flex-direction: column;
   justify-content: space-between;
   padding: 1.85rem 1.75rem;
-  background: linear-gradient(180deg, rgba(9, 14, 20, 0.4) 0%, rgba(9, 14, 20, 0.85) 60%, rgba(6, 9, 13, 0.98) 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(5, 8, 12, 0.12) 0%,
+    rgba(7, 11, 16, 0.32) 38%,
+    rgba(6, 9, 13, 0.80) 72%,
+    rgba(4, 6, 9, 0.96) 100%
+  );
 }
 
 .court-meta-top {
@@ -1653,19 +1661,20 @@
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
 }
 
-/* Sports Turf Image Background — Increased Size & Clarity */
+/* Sports Turf Image Background — Brighter & More Vivid */
 .court-opt-bg {
   position: absolute;
   inset: 0;
   background-size: cover;
   background-position: center;
-  opacity: 0.46; /* Increased sports turf visibility */
-  filter: contrast(1.18) saturate(1.15) brightness(0.92);
-  transition: opacity 0.3s ease, transform 0.4s ease;
+  opacity: 0.65;
+  filter: contrast(1.10) saturate(1.20) brightness(1.25);
+  transition: opacity 0.3s ease, filter 0.3s ease, transform 0.4s ease;
 }
 
 .court-modal-option:hover .court-opt-bg {
-  opacity: 0.62;
+  opacity: 0.82;
+  filter: contrast(1.12) saturate(1.25) brightness(1.35);
   transform: scale(1.05);
 }
 
@@ -1676,7 +1685,8 @@
 }
 
 .court-modal-option.active .court-opt-bg {
-  opacity: 0.58;
+  opacity: 0.75;
+  filter: contrast(1.12) saturate(1.22) brightness(1.30);
 }
 
 .court-opt-content {

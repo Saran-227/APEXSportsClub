@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -74,6 +74,10 @@ class Product(Base):
     vendor: Mapped["Vendor"] = relationship("Vendor", back_populates="products")
     order_items: Mapped[list["ShopOrderItem"]] = relationship("ShopOrderItem", back_populates="product")
     rentals: Mapped[list["EquipmentRental"]] = relationship("EquipmentRental", back_populates="product")
+
+    __table_args__ = (
+        CheckConstraint("stock_quantity >= 0", name="chk_products_stock_non_negative"),
+    )
 
 
 class EquipmentRental(Base):

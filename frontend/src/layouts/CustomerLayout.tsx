@@ -13,9 +13,11 @@ import {
   FileText,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { useCart } from '../context/CartContext';
 
 export const CustomerLayout: React.FC = () => {
   const { user, logout } = useAuth();
+  const { totalCartCount } = useCart();
   const navigate = useNavigate();
   const location = useLocation();
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
@@ -64,14 +66,8 @@ export const CustomerLayout: React.FC = () => {
         isDark ? 'bg-[#0B0E14] text-slate-100' : 'bg-[#FAF8F5] text-[#111827]'
       }`}
     >
-      {/* Top Navbar: Rock-solid 3-section fixed grid so center nav NEVER shifts */}
-      <header
-        className={`sticky top-0 z-50 px-4 sm:px-8 border-b transition-colors duration-200 ${
-          isDark
-            ? 'bg-[#0B0E14]/95 backdrop-blur-md border-[#1E242E]'
-            : 'bg-[#FAF8F5]/95 backdrop-blur-md border-[#E8E2D5]'
-        }`}
-      >
+      {/* Top Navbar: Transparent all the time */}
+      <header className="sticky top-0 z-50 px-4 sm:px-8 border-b border-transparent bg-transparent backdrop-blur-md transition-colors duration-200">
         <div className="max-w-[1440px] mx-auto grid grid-cols-12 h-16 items-center">
           {/* Left Column: Brand Logo (Col 1-3) */}
           <div className="col-span-4 md:col-span-3 flex items-center">
@@ -160,9 +156,11 @@ export const CustomerLayout: React.FC = () => {
               title="Cart"
             >
               <ShoppingCart className="h-4 w-4" />
-              <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#CCFF00] text-[10px] font-black text-slate-950">
-                3
-              </span>
+              {totalCartCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#CCFF00] text-[10px] font-black text-slate-950">
+                  {totalCartCount}
+                </span>
+              )}
             </NavLink>
 
             {/* Bell */}

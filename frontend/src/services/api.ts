@@ -12,6 +12,11 @@ import type {
   PaginatedResponse,
   Invoice,
   InvoiceSummary,
+  GlobalSearchResponse,
+  SearchCategory,
+  AdminRealtimeDashboardData,
+  LeaveRequestItem,
+  EmployeePayrollItem,
 } from '../types';
 import { mapBackendUser } from '../types';
 
@@ -657,4 +662,53 @@ export const invoiceApi = {
     return response.data;
   },
 };
+
+export const searchApi = {
+  search: async (params: {
+    q: string;
+    category?: SearchCategory;
+    limit?: number;
+    offset?: number;
+    fuzzy?: boolean;
+  }): Promise<GlobalSearchResponse> => {
+    const response = await apiClient.get<GlobalSearchResponse>('/search', { params });
+    return response.data;
+  },
+};
+
+export const analyticsApi = {
+  getRealtimeDashboard: async (): Promise<AdminRealtimeDashboardData> => {
+    const response = await apiClient.get<AdminRealtimeDashboardData>('/analytics/admin-dashboard');
+    return response.data;
+  },
+};
+
+export const employeesApi = {
+  list: async (department?: string, status?: string): Promise<EmployeePayrollItem[]> => {
+    const response = await apiClient.get<EmployeePayrollItem[]>('/employees', {
+      params: { department, status_filter: status },
+    });
+    return response.data;
+  },
+  getLeaves: async (status?: string): Promise<LeaveRequestItem[]> => {
+    const response = await apiClient.get<LeaveRequestItem[]>('/employees/leaves', {
+      params: { status_filter: status },
+    });
+    return response.data;
+  },
+  approveLeave: async (leaveId: string, adminNotes?: string): Promise<LeaveRequestItem> => {
+    const response = await apiClient.patch<LeaveRequestItem>(`/employees/leaves/${leaveId}/approve`, {
+      admin_notes: adminNotes,
+    });
+    return response.data;
+  },
+  rejectLeave: async (leaveId: string, adminNotes?: string): Promise<LeaveRequestItem> => {
+    const response = await apiClient.patch<LeaveRequestItem>(`/employees/leaves/${leaveId}/reject`, {
+      admin_notes: adminNotes,
+    });
+    return response.data;
+  },
+};
+
+
 

@@ -10,7 +10,6 @@ import {
   DollarSign,
   Briefcase,
   MessageSquareText,
-  Activity,
   X,
   Store,
 } from 'lucide-react';
@@ -86,17 +85,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Brand Header */}
+        {/* Brand Header with Landing Page Dot-Matrix Logo */}
         <div className="flex h-16 items-center justify-between border-b border-[#25292D] px-6">
           <NavLink to="/dashboard" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#C7FF36] text-slate-950 font-black shadow-lg shadow-[#C7FF36]/20">
-              <Activity className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black border border-white/10 shadow-lg shadow-[#C6FF00]/10">
+              <svg width="22" height="15" viewBox="0 0 22 15" fill="none">
+                <circle cx="2.5" cy="2.5" r="2.2" fill="#C6FF00" />
+                <circle cx="11" cy="2.5" r="2.2" fill="#C6FF00" />
+                <circle cx="19.5" cy="2.5" r="2.2" fill="#C6FF00" />
+                <circle cx="2.5" cy="12.5" r="2.2" fill="#C6FF00" />
+                <circle cx="11" cy="12.5" r="2.2" fill="#C6FF00" />
+                <circle cx="19.5" cy="12.5" r="2.2" fill="#C6FF00" />
+              </svg>
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-bold tracking-tight text-white text-base">Apex</span>
-                <span className="text-[#C7FF36] font-bold text-base">Sports</span>
-                <span className="rounded bg-[#C7FF36]/15 px-1.5 py-0.2 text-[10px] font-bold text-[#C7FF36] border border-[#C7FF36]/30">
+                <span className="font-bold tracking-wider text-white text-sm">APEX SPORTS</span>
+                <span className="rounded bg-[#C6FF00]/15 px-1.5 py-0.2 text-[10px] font-bold text-[#C6FF00] border border-[#C6FF00]/30">
                   ADMIN
                 </span>
               </div>

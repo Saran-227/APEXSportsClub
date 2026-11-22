@@ -2,7 +2,7 @@
 import uuid
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, Time, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, Time, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -79,6 +79,7 @@ class CourtBooking(Base):
     member: Mapped["backend.app.memberships.models.Member | None"] = relationship("Member")
 
     __table_args__ = (
+        CheckConstraint("end_time > start_time", name="chk_booking_end_after_start"),
         Index("ix_court_bookings_court_times", "court_id", "booking_date", "start_time", "end_time", "status"),
         Index("ix_court_bookings_user_daily", "user_id", "booking_date", "status"),
     )

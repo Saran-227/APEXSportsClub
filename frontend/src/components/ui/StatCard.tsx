@@ -6,7 +6,7 @@ export interface StatCardProps {
   value: string | number;
   change?: string;
   isPositive?: boolean;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   subtitle?: string;
   isPlaceholder?: boolean;
 }
@@ -36,9 +36,11 @@ export const StatCard: React.FC<StatCardProps> = ({
           </div>
           <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{value}</p>
         </div>
-        <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-slate-50 text-slate-700 border border-slate-200/60">
-          {icon}
-        </div>
+        {icon && (
+          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-slate-50 text-slate-700 border border-slate-200/60">
+            {icon}
+          </div>
+        )}
       </div>
 
       <div className="mt-3 flex items-center gap-2 text-xs">

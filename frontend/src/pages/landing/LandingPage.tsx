@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { getRoleDefaultDashboard } from '../../utils/navigation';
 import './landing.css';
 
 interface CourtItem {
@@ -116,7 +117,7 @@ export interface LandingPageProps {
 
 export const LandingPage: React.FC<LandingPageProps> = ({ hideNav = false }) => {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   // Scroll state for header styling
   const [isScrolled, setIsScrolled] = useState<boolean>(false);
@@ -253,7 +254,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ hideNav = false }) => 
               {/* Portal / Dashboard Access Button */}
               <button
                 type="button"
-                onClick={() => navigate(isAuthenticated ? '/customer/dashboard' : '/login?mode=login')}
+                onClick={() => navigate(isAuthenticated ? getRoleDefaultDashboard(user) : '/login?mode=login')}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -855,7 +856,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ hideNav = false }) => 
                 <a href="#coaches">Coaching</a>
                 <a href="#memberships">Memberships</a>
                 <span
-                  onClick={() => navigate(isAuthenticated ? '/dashboard' : '/login')}
+                  onClick={() => navigate(isAuthenticated ? getRoleDefaultDashboard(user) : '/login')}
                   className="cursor-pointer text-[#C6FF00] hover:underline"
                 >
                   {isAuthenticated ? 'Club Terminal (Staff)' : 'Staff Login'}

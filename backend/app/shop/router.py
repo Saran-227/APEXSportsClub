@@ -156,7 +156,7 @@ def get_shop_catalog(
     if search:
         patt = f"%{search.strip()}%"
         query = query.filter(or_(Product.name.ilike(patt), Product.description.ilike(patt)))
-    return query.all()
+    return query.order_by(Product.created_at.desc(), Product.id.desc()).all()
 
 
 # --- Vendor Scoped Endpoints ---
@@ -167,7 +167,12 @@ def get_vendor_products(
 ):
     """Vendor: View only products belonging to own vendor business."""
     vendor = get_vendor_for_user(db, current_user)
-    return db.query(Product).filter(Product.vendor_id == vendor.id).all()
+    return (
+        db.query(Product)
+        .filter(Product.vendor_id == vendor.id)
+        .order_by(Product.created_at.desc(), Product.id.desc())
+        .all()
+    )
 
 
 @router.post("/shop/vendor/products", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
@@ -274,18 +279,22 @@ def create_shop_order(
     if not payload.items:
         raise HTTPException(status_code=400, detail="Cart cannot be empty")
 
-    first_product = db.query(Product).filter(Product.id == payload.items[0].product_id).first()
-    if not first_product:
-        raise HTTPException(status_code=404, detail="Product not found")
-
-    vendor_id = first_product.vendor_id
+    vendor_id = None
     total_amount = Decimal("0.00")
     order_items_to_create = []
 
     for item in payload.items:
-        prod = db.query(Product).filter(Product.id == item.product_id, Product.is_active == True).first()
+        prod = (
+            db.query(Product)
+            .filter(Product.id == item.product_id, Product.is_active == True)
+            .with_for_update()
+            .populate_existing()
+            .first()
+        )
         if not prod:
             raise HTTPException(status_code=404, detail=f"Product {item.product_id} not available")
+        if vendor_id is None:
+            vendor_id = prod.vendor_id
         if prod.stock_quantity < item.quantity:
             raise HTTPException(
                 status_code=400,
@@ -404,7 +413,7 @@ def list_shop_orders(
     elif primary_role == "CUSTOMER":
         query = query.filter(ShopOrder.user_id == current_user.id)
 
-    orders = query.order_by(ShopOrder.created_at.desc()).limit(100).all()
+    orders = query.order_by(ShopOrder.created_at.desc(), ShopOrder.id.desc()).limit(100).all()
 
     result = []
     for o in orders:
@@ -554,7 +563,7 @@ def list_equipment_rentals(
         if vendor:
             query = query.filter(Product.vendor_id == vendor.id)
 
-    rentals = query.order_by(EquipmentRental.created_at.desc()).all()
+    rentals = query.order_by(EquipmentRental.created_at.desc(), EquipmentRental.id.desc()).all()
     return [
         EquipmentRentalResponse(
             id=r.id,

@@ -43,14 +43,16 @@ export const AdminVendorsPage: React.FC = () => {
     }
   };
 
-  const filteredVendors = vendors.filter((v) => {
-    const matchesSearch =
-      v.business_name?.toLowerCase().includes(search.toLowerCase()) ||
-      v.owner_name?.toLowerCase().includes(search.toLowerCase()) ||
-      v.owner_email?.toLowerCase().includes(search.toLowerCase());
-    const matchesType = typeFilter === 'ALL' || v.vendor_type === typeFilter;
-    return matchesSearch && matchesType;
-  });
+  const filteredVendors = vendors
+    .filter((v) => {
+      const matchesSearch =
+        v.business_name?.toLowerCase().includes(search.toLowerCase()) ||
+        v.owner_name?.toLowerCase().includes(search.toLowerCase()) ||
+        v.owner_email?.toLowerCase().includes(search.toLowerCase());
+      const matchesType = typeFilter === 'ALL' || v.vendor_type === typeFilter;
+      return matchesSearch && matchesType;
+    })
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
   const shopVendors = vendors.filter((v) => v.vendor_type === 'SPORTS_SHOP');
   const cafeVendors = vendors.filter((v) => v.vendor_type === 'CAFETERIA');

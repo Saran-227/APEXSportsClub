@@ -188,7 +188,7 @@ def list_vendors_admin(
     if resolve_primary_role(roles) != "ADMIN":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    vendors = db.query(Vendor).all()
+    vendors = db.query(Vendor).order_by(Vendor.created_at.desc(), Vendor.id.desc()).all()
     res = []
     for v in vendors:
         p_count = len(v.products)
@@ -246,7 +246,7 @@ def list_transactions(
     if primary_role != "ADMIN":
         query = query.filter(Payment.user_id == current_user.id)
 
-    payments = query.order_by(Payment.created_at.desc()).limit(100).all()
+    payments = query.order_by(Payment.created_at.desc(), Payment.id.desc()).limit(100).all()
     return [
         PaymentResponse(
             id=p.id,
@@ -378,7 +378,12 @@ def list_invoices(
     if email_status:
         query = query.filter(Invoice.email_status == email_status.strip().upper())
 
-    invoices = query.order_by(Invoice.issued_at.desc()).offset(offset).limit(limit).all()
+    invoices = (
+        query.order_by(Invoice.issued_at.desc(), Invoice.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
     return [_serialize_invoice(inv) for inv in invoices]
 
 

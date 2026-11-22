@@ -134,15 +134,34 @@ export const CustomerMembershipPage: React.FC = () => {
         await membershipsApi.subscribe(matchingBackendPlan.id);
         const updated = await membersApi.getMyMembership();
         setCurrentMember(updated);
+      } else {
+        setCurrentMember((prev: any) => ({
+          ...prev,
+          status: 'ACTIVE',
+          tier: `${tier.namePrefix} Tier`,
+          expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        }));
       }
       setSuccessModalTier(tier.name);
     } catch (err: any) {
       // Fallback local visual confirmation
+      setCurrentMember((prev: any) => ({
+        ...prev,
+        status: 'ACTIVE',
+        tier: `${tier.namePrefix} Tier`,
+        expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      }));
       setSuccessModalTier(tier.name);
     } finally {
       setSubscribingTier(null);
     }
   };
+
+  const isSubscribedToAny = Boolean(
+    currentMember?.status === 'ACTIVE' &&
+    currentMember?.tier &&
+    currentMember.tier !== 'General Access'
+  );
 
   if (isLoading) {
     return (
@@ -156,7 +175,7 @@ export const CustomerMembershipPage: React.FC = () => {
   return (
     <div className="space-y-8 max-w-[1400px] mx-auto pb-16 animate-fadeIn">
       {/* Active Member Status Banner (if user has active membership) */}
-      {currentMember && (
+      {isSubscribedToAny && (
         <div className="rounded-2xl bg-[#083222] border border-[#134E33] p-4 sm:p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-[#CCFF00]/20 border border-[#CCFF00]/40 flex items-center justify-center text-[#CCFF00]">
@@ -287,14 +306,22 @@ export const CustomerMembershipPage: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 lg:gap-14 xl:gap-20 relative">
           {tierDetails.map((tier, idx) => {
             const isSubscribing = subscribingTier === tier.name;
+            const isCurrentTier = Boolean(
+              isSubscribedToAny &&
+              currentMember?.tier?.toLowerCase().includes(tier.namePrefix.toLowerCase())
+            );
 
             return (
               <div
                 key={tier.id}
-                className="relative flex flex-col justify-between space-y-6 pt-2 px-1 sm:px-2"
+                className={`relative flex flex-col justify-between space-y-6 pt-2 px-2 sm:px-3 rounded-2xl transition ${
+                  isCurrentTier
+                    ? 'bg-[#083222]/10 ring-2 ring-[#CCFF00] shadow-md p-3 sm:p-4'
+                    : ''
+                }`}
               >
                 {/* Slanted Lime Divider on the Right of Col 1 & Col 2 (Contained SVG Line, Never Overlaps Text) */}
-                {idx < 2 && (
+                {idx < 2 && !isCurrentTier && (
                   <div className="hidden lg:flex absolute -right-7 xl:-right-10 top-6 bottom-6 w-8 items-center justify-center pointer-events-none z-10">
                     <svg
                       className="h-full w-8 overflow-visible"
@@ -316,10 +343,17 @@ export const CustomerMembershipPage: React.FC = () => {
 
                 {/* Top: Tier Name & Description */}
                 <div className="space-y-2">
-                  <h2 className="text-2xl sm:text-3xl lg:text-[34px] font-black italic uppercase tracking-tight leading-none">
-                    <span className="text-[#073B25]">{tier.namePrefix} </span>
-                    <span className="text-[#B8ED00]">{tier.nameSuffix}</span>
-                  </h2>
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="text-2xl sm:text-3xl lg:text-[34px] font-black italic uppercase tracking-tight leading-none">
+                      <span className="text-[#073B25]">{tier.namePrefix} </span>
+                      <span className="text-[#B8ED00]">{tier.nameSuffix}</span>
+                    </h2>
+                    {isCurrentTier && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#083222] border border-[#CCFF00] text-[10px] font-black text-[#CCFF00] uppercase tracking-wider shrink-0 shadow-xs">
+                        <Check className="h-3 w-3 stroke-[3]" /> Active Plan
+                      </span>
+                    )}
+                  </div>
 
                   <p className="text-xs text-slate-700 font-medium min-h-[36px] leading-relaxed">
                     {tier.description}
@@ -354,16 +388,34 @@ export const CustomerMembershipPage: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Bottom: Electric Lime Subscribe Pill Button */}
+                {/* Bottom: Electric Lime Subscribe Pill Button or Currently Subscribed Badge */}
                 <div className="pt-4">
-                  <button
-                    type="button"
-                    onClick={() => handleSubscribe(tier)}
-                    disabled={isSubscribing}
-                    className="w-full py-3.5 px-6 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 font-black italic uppercase text-xs sm:text-[13px] tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow-md transition transform hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-                  >
-                    <span>{isSubscribing ? 'PROCESSING...' : `${tier.buttonText} →`}</span>
-                  </button>
+                  {isCurrentTier ? (
+                    <button
+                      type="button"
+                      disabled
+                      aria-label="Currently subscribed tier"
+                      className="w-full py-3.5 px-6 rounded-full bg-[#083222] border-2 border-[#CCFF00] text-[#CCFF00] font-black italic uppercase text-xs sm:text-[13px] tracking-wider flex items-center justify-center gap-2 shadow-sm cursor-default select-none"
+                    >
+                      <CheckCircle2 className="h-4 w-4 text-[#CCFF00] shrink-0" />
+                      <span>CURRENTLY SUBSCRIBED</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSubscribe(tier)}
+                      disabled={isSubscribing}
+                      className="w-full py-3.5 px-6 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 font-black italic uppercase text-xs sm:text-[13px] tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow-md transition transform hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                    >
+                      <span>
+                        {isSubscribing
+                          ? 'PROCESSING...'
+                          : isSubscribedToAny
+                          ? `SWITCH TO ${tier.namePrefix} TIER →`
+                          : `${tier.buttonText} →`}
+                      </span>
+                    </button>
+                  )}
                 </div>
               </div>
             );

@@ -107,7 +107,7 @@ export const CustomerInvoicesPage: React.FC = () => {
       inv.transaction_type?.toLowerCase().includes(query);
 
     return matchesCategory && matchesSearch;
-  });
+  }).sort((a, b) => new Date(b.issued_at).getTime() - new Date(a.issued_at).getTime());
 
   const getCategoryBadge = (type: string) => {
     switch (type?.toUpperCase()) {

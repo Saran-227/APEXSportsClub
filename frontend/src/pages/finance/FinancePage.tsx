@@ -77,16 +77,18 @@ export const FinancePage: React.FC = () => {
     }
   };
 
-  const filteredInvoices = invoices.filter((inv) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      inv.invoice_number?.toLowerCase().includes(q) ||
-      inv.customer_name?.toLowerCase().includes(q) ||
-      inv.reference_id?.toLowerCase().includes(q) ||
-      inv.transaction_type?.toLowerCase().includes(q)
-    );
-  });
+  const filteredInvoices = invoices
+    .filter((inv) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        inv.invoice_number?.toLowerCase().includes(q) ||
+        inv.customer_name?.toLowerCase().includes(q) ||
+        inv.reference_id?.toLowerCase().includes(q) ||
+        inv.transaction_type?.toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => new Date(b.issued_at).getTime() - new Date(a.issued_at).getTime());
 
   return (
     <div className="space-y-6">

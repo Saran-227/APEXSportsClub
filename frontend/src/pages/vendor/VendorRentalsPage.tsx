@@ -44,13 +44,19 @@ export const VendorRentalsPage: React.FC = () => {
     }
   };
 
-  const filteredRentals = rentals.filter((r) => {
-    const matchesSearch =
-      r.product_name?.toLowerCase().includes(search.toLowerCase()) ||
-      r.user_name?.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === 'ALL' || r.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredRentals = rentals
+    .filter((r) => {
+      const matchesSearch =
+        r.product_name?.toLowerCase().includes(search.toLowerCase()) ||
+        r.user_name?.toLowerCase().includes(search.toLowerCase());
+      const matchesStatus = statusFilter === 'ALL' || r.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.rental_start || b.created_at || 0).getTime() -
+        new Date(a.rental_start || a.created_at || 0).getTime()
+    );
 
   const activeRentals = rentals.filter((r) => r.status === 'ACTIVE');
   const returnedRentals = rentals.filter((r) => r.status === 'RETURNED');

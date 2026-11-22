@@ -72,7 +72,12 @@ class CreateMemberRequest(BaseModel):
 @router.get("/memberships/plans", response_model=List[MembershipPlanResponse])
 def get_membership_plans(db: Session = Depends(get_db)):
     """List all available active membership tiers (Gold, Silver, Junior)."""
-    plans = db.query(MembershipPlan).filter(MembershipPlan.is_active == True).all()
+    plans = (
+        db.query(MembershipPlan)
+        .filter(MembershipPlan.is_active == True)
+        .order_by(MembershipPlan.created_at.desc(), MembershipPlan.id.desc())
+        .all()
+    )
     return plans
 
 
@@ -104,7 +109,12 @@ def list_members(
 
     total_count = query.count()
     offset = (page - 1) * page_size
-    members = query.offset(offset).limit(page_size).all()
+    members = (
+        query.order_by(Member.created_at.desc(), Member.id.desc())
+        .offset(offset)
+        .limit(page_size)
+        .all()
+    )
 
     items = []
     for m in members:

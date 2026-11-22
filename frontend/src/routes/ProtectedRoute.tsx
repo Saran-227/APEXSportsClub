@@ -28,7 +28,12 @@ export const ProtectedRoute: React.FC<{
 
   if (allowedRoles && allowedRoles.length > 0) {
     const userRole = (user.role || '').toUpperCase();
-    const hasAllowed = allowedRoles.some((r) => r.toUpperCase() === userRole || hasRole(r));
+    const isSuperUser =
+      userRole === 'ADMIN' ||
+      userRole === 'SUPERADMIN' ||
+      hasRole('ADMIN') ||
+      hasRole('SUPERADMIN');
+    const hasAllowed = isSuperUser || allowedRoles.some((r) => r.toUpperCase() === userRole || hasRole(r));
     if (!hasAllowed) {
       return <Navigate to={getRoleDefaultDashboard(user)} replace />;
     }

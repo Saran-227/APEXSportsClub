@@ -2,7 +2,7 @@
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -103,3 +103,57 @@ class Expense(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class JournalEntry(Base):
+    """Double-entry general ledger journal header."""
+
+    __tablename__ = "journal_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    entry_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    entry_date: Mapped[date] = mapped_column(Date, default=date.today, nullable=False, index=True)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    reference_type: Mapped[str | None] = mapped_column(String(50), nullable=True)  # INVOICE, PAYMENT, EXPENSE, MANUAL
+    reference_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_posted: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    # Relationships
+    lines: Mapped[list["JournalEntryLine"]] = relationship(
+        "JournalEntryLine", back_populates="entry", cascade="all, delete-orphan", order_by="JournalEntryLine.line_number"
+    )
+
+    __table_args__ = (
+        Index("ix_journal_entries_ref", "reference_type", "reference_id"),
+    )
+
+
+class JournalEntryLine(Base):
+    """Double-entry general ledger debit/credit line item."""
+
+    __tablename__ = "journal_entry_lines"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    journal_entry_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("journal_entries.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    account_code: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    account_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    debit: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
+    credit: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    line_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    # Relationships
+    entry: Mapped["JournalEntry"] = relationship("JournalEntry", back_populates="lines")
+
+    __table_args__ = (
+        CheckConstraint("debit >= 0", name="chk_jel_debit_non_negative"),
+        CheckConstraint("credit >= 0", name="chk_jel_credit_non_negative"),
+    )
+

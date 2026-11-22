@@ -18,6 +18,9 @@ from backend.app.shop.router import router as shop_router
 from backend.app.cafeteria.router import router as cafeteria_router
 from backend.app.finance.router import router as finance_router
 from backend.app.crm.router import router as crm_router
+from backend.app.search.router import router as search_router
+from backend.app.employees.router import router as employees_router
+from backend.app.analytics.router import router as analytics_router
 from backend.app.core.config import get_settings
 from backend.app.core.database import check_db_health, get_db
 from backend.app.core.exceptions import (
@@ -159,6 +162,9 @@ def create_application() -> FastAPI:
     api_router.include_router(cafeteria_router)
     api_router.include_router(finance_router)
     api_router.include_router(crm_router)
+    api_router.include_router(search_router)
+    api_router.include_router(employees_router)
+    api_router.include_router(analytics_router)
 
     # Mount API router
     app.include_router(api_router)
