@@ -91,6 +91,9 @@ class CreateBookingRequest(BaseModel):
     start_time: str = Field(..., description="Start time in HH:MM format (e.g. 09:30)")
     participant_count: int = Field(default=1, ge=1, le=8)
     notes: Optional[str] = None
+    razorpay_order_id: Optional[str] = None
+    razorpay_payment_id: Optional[str] = None
+    razorpay_signature: Optional[str] = None
 
 
 class BookingResponse(BaseModel):
@@ -554,6 +557,12 @@ def create_booking(
 
     total_amount = max(Decimal("0.00"), court.hourly_rate - discount_amount)
 
+    # Signature verification if paid via Razorpay
+    if payload.razorpay_order_id and payload.razorpay_payment_id and payload.razorpay_signature:
+        from backend.app.finance.razorpay_service import verify_payment_signature
+        if not verify_payment_signature(payload.razorpay_order_id, payload.razorpay_payment_id, payload.razorpay_signature):
+            raise HTTPException(status_code=400, detail="Invalid Razorpay cryptographic signature.")
+
     # 6. Create booking record
     booking = CourtBooking(
         court_id=court.id,
@@ -598,6 +607,11 @@ def create_booking(
             reference_id=f"BKG-{str(booking.id)[:8].upper()}",
             membership_number=member.membership_number if member else None,
             idempotency_key=f"BOOKING:{booking.id}",
+            payment_method="RAZORPAY" if payload.razorpay_payment_id else "UPI",
+            payment_reference=payload.razorpay_payment_id,
+            razorpay_order_id=payload.razorpay_order_id,
+            razorpay_payment_id=payload.razorpay_payment_id,
+            razorpay_signature=payload.razorpay_signature,
         )
         invoice_number = inv.invoice_number
     except Exception as e:

@@ -17,6 +17,7 @@ from backend.app.bookings.router import router as bookings_router
 from backend.app.shop.router import router as shop_router
 from backend.app.cafeteria.router import router as cafeteria_router
 from backend.app.finance.router import router as finance_router
+from backend.app.finance.payments_router import router as payments_router
 from backend.app.crm.router import router as crm_router
 from backend.app.search.router import router as search_router
 from backend.app.employees.router import router as employees_router
@@ -161,6 +162,7 @@ def create_application() -> FastAPI:
     api_router.include_router(shop_router)
     api_router.include_router(cafeteria_router)
     api_router.include_router(finance_router)
+    api_router.include_router(payments_router)
     api_router.include_router(crm_router)
     api_router.include_router(search_router)
     api_router.include_router(employees_router)

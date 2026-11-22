@@ -327,6 +327,16 @@ export const MOCK_FEATURED_PRODUCTS: MockProduct[] = [
 
 export const MOCK_ALL_PRODUCTS: MockProduct[] = [
   {
+    id: '97c36fb7-6263-42d8-b874-6438d638d7b0',
+    name: 'Apex Pro Wristband • Quick Pay Test',
+    tagline: 'Moisture-Wicking Silicone • ₹1 Razorpay Test Item',
+    category: 'Accessories',
+    price: 1,
+    colors: ['#C7FF36', '#083222'],
+    image: 'https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?auto=format&fit=crop&w=800&q=80',
+    inStock: true,
+  },
+  {
     id: 'prod-1',
     name: 'COURT 01',
     tagline: 'All-Rounder Racket',

@@ -10,8 +10,11 @@ import {
   Clock,
   Check,
   X,
+  Loader2,
 } from 'lucide-react';
-import { membersApi, membershipsApi } from '../../services/api';
+import { membersApi, membershipsApi, paymentsApi, normalizeApiError } from '../../services/api';
+import { openRazorpayModal } from '../../utils/razorpay';
+import { useAuth } from '../../hooks/useAuth';
 
 interface PlanDetail {
   id: string;
@@ -31,6 +34,7 @@ interface PlanDetail {
 }
 
 export const CustomerMembershipPage: React.FC = () => {
+  const { user } = useAuth();
   const [plans, setPlans] = useState<any[]>([]);
   const [currentMember, setCurrentMember] = useState<any>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -126,33 +130,75 @@ export const CustomerMembershipPage: React.FC = () => {
   const handleSubscribe = async (tier: PlanDetail) => {
     setSubscribingTier(tier.name);
     try {
-      // Find matching backend plan by name or subscribe
+      // Find matching backend plan by name
       const matchingBackendPlan = plans.find(
         (p) => p.name.toLowerCase().includes(tier.namePrefix.toLowerCase())
       );
-      if (matchingBackendPlan) {
-        await membershipsApi.subscribe(matchingBackendPlan.id);
-        const updated = await membersApi.getMyMembership();
-        setCurrentMember(updated);
-      } else {
-        setCurrentMember((prev: any) => ({
-          ...prev,
-          status: 'ACTIVE',
-          tier: `${tier.namePrefix} Tier`,
-          expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        }));
-      }
-      setSuccessModalTier(tier.name);
+      const planPrice = matchingBackendPlan ? Number(matchingBackendPlan.price) : tier.priceRaw;
+      const planId = matchingBackendPlan?.id;
+
+      // 1. Create Razorpay order on backend
+      const order = await paymentsApi.createOrder({
+        amount: planPrice,
+        purpose: 'MEMBERSHIP',
+        reference_id: planId,
+        notes: {
+          plan_name: tier.name,
+          tier: tier.namePrefix,
+        },
+      });
+
+      // 2. Open Razorpay Checkout modal
+      await openRazorpayModal({
+        keyId: order.key_id,
+        orderId: order.order_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'Apex Sports Club',
+        description: `Membership Subscription: ${tier.name}`,
+        prefill: {
+          name: user?.fullName || '',
+          email: user?.email || '',
+          contact: user?.phoneNumber || '',
+        },
+        themeColor: '#083222',
+        onSuccess: async (rzpResult) => {
+          try {
+            if (planId) {
+              await membershipsApi.subscribe(planId, {
+                razorpay_order_id: rzpResult.razorpay_order_id,
+                razorpay_payment_id: rzpResult.razorpay_payment_id,
+                razorpay_signature: rzpResult.razorpay_signature,
+              });
+              const updated = await membersApi.getMyMembership();
+              setCurrentMember(updated);
+            } else {
+              setCurrentMember((prev: any) => ({
+                ...prev,
+                status: 'ACTIVE',
+                tier: `${tier.namePrefix} Tier`,
+                expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+              }));
+            }
+            setSuccessModalTier(tier.name);
+          } catch (fulfillErr: any) {
+            const errObj = normalizeApiError(fulfillErr);
+            alert(errObj.message || 'Payment completed but membership fulfillment encountered an error.');
+          } finally {
+            setSubscribingTier(null);
+          }
+        },
+        onDismiss: () => {
+          setSubscribingTier(null);
+        },
+        onError: (err) => {
+          setSubscribingTier(null);
+          alert(err?.message || 'Razorpay checkout encountered an issue.');
+        },
+      });
     } catch (err: any) {
-      // Fallback local visual confirmation
-      setCurrentMember((prev: any) => ({
-        ...prev,
-        status: 'ACTIVE',
-        tier: `${tier.namePrefix} Tier`,
-        expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      }));
-      setSuccessModalTier(tier.name);
-    } finally {
+      const errObj = normalizeApiError(err);
+      alert(errObj.message || 'Failed to initialize payment gateway.');
       setSubscribingTier(null);
     }
   };
@@ -407,13 +453,18 @@ export const CustomerMembershipPage: React.FC = () => {
                       disabled={isSubscribing}
                       className="w-full py-3.5 px-6 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 font-black italic uppercase text-xs sm:text-[13px] tracking-wider flex items-center justify-center gap-2 shadow-sm hover:shadow-md transition transform hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
                     >
-                      <span>
-                        {isSubscribing
-                          ? 'PROCESSING...'
-                          : isSubscribedToAny
-                          ? `SWITCH TO ${tier.namePrefix} TIER →`
-                          : `${tier.buttonText} →`}
-                      </span>
+                      {isSubscribing ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin text-slate-950" />
+                          <span>PROCESSING PAYMENT...</span>
+                        </>
+                      ) : (
+                        <span>
+                          {isSubscribedToAny
+                            ? `SWITCH TO ${tier.namePrefix} TIER →`
+                            : `${tier.buttonText} →`}
+                        </span>
+                      )}
                     </button>
                   )}
                 </div>

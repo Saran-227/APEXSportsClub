@@ -31,6 +31,9 @@ class Payment(Base):
     reference_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)  # BOOKING, SHOP_ORDER, FOOD_ORDER, MEMBERSHIP
     reference_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     transaction_reference: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True, index=True)
+    razorpay_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    razorpay_payment_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    razorpay_signature: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
 

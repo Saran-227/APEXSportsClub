@@ -11,9 +11,12 @@ import {
   X,
   Clock,
 } from 'lucide-react';
-import { cafeteriaApi } from '../../services/api';
+import { cafeteriaApi, paymentsApi, normalizeApiError } from '../../services/api';
+import { openRazorpayModal } from '../../utils/razorpay';
+import { useAuth } from '../../hooks/useAuth';
 
 export const CustomerCafeteriaPage: React.FC = () => {
+  const { user } = useAuth();
   const [menuItems, setMenuItems] = useState<any[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [cart, setCart] = useState<Array<{ item: any; quantity: number; notes: string }>>([]);
@@ -74,24 +77,68 @@ export const CustomerCafeteriaPage: React.FC = () => {
     setIsOrdering(true);
     setErrorMessage(null);
     try {
-      const payload = {
-        items: cart.map((c) => ({
-          menu_item_id: c.item.id,
-          quantity: c.quantity,
-          special_instructions: c.notes || undefined,
-        })),
-        order_type: orderType,
-        customer_notes: customerNotes || undefined,
-      };
-      const res = await cafeteriaApi.createOrder(payload);
-      setOrderSuccess(res);
-      setCart([]);
-      setIsCartOpen(false);
-      const updatedOrders = await cafeteriaApi.getOrders();
-      setMyOrders(updatedOrders);
+      // 1. Create Razorpay order on backend
+      const order = await paymentsApi.createOrder({
+        amount: subtotal,
+        purpose: 'CAFETERIA',
+        notes: {
+          order_type: orderType,
+          items_count: String(cart.length),
+        },
+      });
+
+      // 2. Open Razorpay modal
+      await openRazorpayModal({
+        keyId: order.key_id,
+        orderId: order.order_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'Apex Fuel & Nutrition Lounge',
+        description: `Cafeteria Order (${orderType})`,
+        prefill: {
+          name: user?.fullName || '',
+          email: user?.email || '',
+          contact: user?.phoneNumber || '',
+        },
+        themeColor: '#083222',
+        onSuccess: async (rzpResult) => {
+          try {
+            const payload = {
+              items: cart.map((c) => ({
+                menu_item_id: c.item.id,
+                quantity: c.quantity,
+                special_instructions: c.notes || undefined,
+              })),
+              order_type: orderType,
+              customer_notes: customerNotes || undefined,
+              razorpay_order_id: rzpResult.razorpay_order_id,
+              razorpay_payment_id: rzpResult.razorpay_payment_id,
+              razorpay_signature: rzpResult.razorpay_signature,
+            };
+            const res = await cafeteriaApi.createOrder(payload);
+            setOrderSuccess(res);
+            setCart([]);
+            setIsCartOpen(false);
+            const updatedOrders = await cafeteriaApi.getOrders();
+            setMyOrders(updatedOrders);
+          } catch (fulfillErr: any) {
+            const errObj = normalizeApiError(fulfillErr);
+            setErrorMessage(errObj.message || 'Payment fulfilled but failed to register order.');
+          } finally {
+            setIsOrdering(false);
+          }
+        },
+        onDismiss: () => {
+          setIsOrdering(false);
+        },
+        onError: (err) => {
+          setIsOrdering(false);
+          setErrorMessage(err?.message || 'Razorpay checkout encountered an issue.');
+        },
+      });
     } catch (err: any) {
-      setErrorMessage(err.response?.data?.detail || err.message || 'Order failed');
-    } finally {
+      const errObj = normalizeApiError(err);
+      setErrorMessage(errObj.message || 'Failed to initialize payment gateway.');
       setIsOrdering(false);
     }
   };
@@ -325,7 +372,7 @@ export const CustomerCafeteriaPage: React.FC = () => {
                   disabled={isOrdering}
                   className="w-full py-3 rounded-xl bg-[#C7FF36] text-slate-950 font-bold text-xs hover:bg-[#b0e600] transition shadow-lg shadow-[#C7FF36]/20 cursor-pointer disabled:opacity-50"
                 >
-                  {isOrdering ? 'Sending Order...' : 'Send Order to Kitchen'}
+                  {isOrdering ? 'Processing Payment...' : 'Pay via Razorpay'}
                 </button>
               </div>
             )}

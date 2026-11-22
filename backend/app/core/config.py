@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     EMAIL_FROM_NAME: str = Field(default="Apex Sports Club")
     INVOICE_STORAGE_DIR: str = Field(default="storage/invoices")
 
+    # Razorpay Payment Gateway Configuration
+    RAZORPAY_KEY_ID: Optional[str] = Field(default=None)
+    RAZORPAY_KEY_SECRET: Optional[str] = Field(default=None)
+    RAZORPAY_WEBHOOK_SECRET: Optional[str] = Field(default=None)
+
     # CORS Allowed Origins
     CORS_ORIGINS: List[str] = Field(
         default=[

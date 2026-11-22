@@ -4,10 +4,14 @@ import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
-import { shopApi } from '../../services/api';
+import { shopApi, paymentsApi, normalizeApiError } from '../../services/api';
+import { openRazorpayModal } from '../../utils/razorpay';
+import { useAuth } from '../../hooks/useAuth';
 
 export const CustomerRentalsPage: React.FC = () => {
+  const { user } = useAuth();
   const [rentalsCatalog, setRentalsCatalog] = useState<any[]>([]);
   const [myRentals, setMyRentals] = useState<any[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
@@ -47,19 +51,66 @@ export const CustomerRentalsPage: React.FC = () => {
     setMessage(null);
     setError(null);
     try {
-      const payload = {
-        product_id: selectedProduct.id,
-        rental_start: new Date(startDate).toISOString(),
-        rental_end: new Date(endDate).toISOString(),
-        notes: notes || undefined,
-      };
-      await shopApi.bookRental(payload);
-      setMessage(`Successfully reserved ${selectedProduct.name} for rental!`);
-      const updated = await shopApi.getRentals();
-      setMyRentals(updated);
+      // 1. Create Razorpay order on backend
+      const order = await paymentsApi.createOrder({
+        amount: totalFee,
+        purpose: 'RENTAL',
+        reference_id: selectedProduct.id,
+        notes: {
+          product_name: selectedProduct.name,
+          rental_days: String(daysDiff),
+          start_date: startDate,
+          end_date: endDate,
+        },
+      });
+
+      // 2. Open Razorpay modal
+      await openRazorpayModal({
+        keyId: order.key_id,
+        orderId: order.order_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'Apex Sports Club',
+        description: `Rental: ${selectedProduct.name} (${daysDiff} days)`,
+        prefill: {
+          name: user?.fullName || '',
+          email: user?.email || '',
+          contact: user?.phoneNumber || '',
+        },
+        themeColor: '#083222',
+        onSuccess: async (rzpResult) => {
+          try {
+            const payload = {
+              product_id: selectedProduct.id,
+              rental_start: new Date(startDate).toISOString(),
+              rental_end: new Date(endDate).toISOString(),
+              notes: notes || undefined,
+              razorpay_order_id: rzpResult.razorpay_order_id,
+              razorpay_payment_id: rzpResult.razorpay_payment_id,
+              razorpay_signature: rzpResult.razorpay_signature,
+            };
+            await shopApi.bookRental(payload);
+            setMessage(`Successfully reserved ${selectedProduct.name} for rental!`);
+            const updated = await shopApi.getRentals();
+            setMyRentals(updated);
+          } catch (fulfillErr: any) {
+            const errObj = normalizeApiError(fulfillErr);
+            setError(errObj.message || 'Payment completed but failed to register rental reservation.');
+          } finally {
+            setIsSubmitting(false);
+          }
+        },
+        onDismiss: () => {
+          setIsSubmitting(false);
+        },
+        onError: (err) => {
+          setIsSubmitting(false);
+          setError(err?.message || 'Razorpay checkout encountered an issue.');
+        },
+      });
     } catch (err: any) {
-      setError(err.response?.data?.detail || err.message || 'Rental reservation failed');
-    } finally {
+      const errObj = normalizeApiError(err);
+      setError(errObj.message || 'Failed to initialize payment gateway.');
       setIsSubmitting(false);
     }
   };
@@ -191,9 +242,16 @@ export const CustomerRentalsPage: React.FC = () => {
               <button
                 onClick={handleBookRental}
                 disabled={isSubmitting}
-                className="px-6 py-2.5 rounded-xl bg-[#C7FF36] text-slate-950 font-bold text-xs hover:bg-[#b0e600] transition shadow-lg shadow-[#C7FF36]/20 cursor-pointer disabled:opacity-50"
+                className="px-6 py-2.5 rounded-xl bg-[#C7FF36] text-slate-950 font-bold text-xs hover:bg-[#b0e600] transition shadow-lg shadow-[#C7FF36]/20 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
-                {isSubmitting ? 'Reserving...' : 'Reserve Equipment'}
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-950" />
+                    <span>Processing Payment...</span>
+                  </>
+                ) : (
+                  <span>Pay via Razorpay</span>
+                )}
               </button>
             </div>
           </div>

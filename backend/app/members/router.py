@@ -58,6 +58,9 @@ class MemberListResponse(BaseModel):
 
 class SubscribePlanRequest(BaseModel):
     plan_id: uuid.UUID
+    razorpay_order_id: Optional[str] = None
+    razorpay_payment_id: Optional[str] = None
+    razorpay_signature: Optional[str] = None
 
 
 class CreateMemberRequest(BaseModel):
@@ -191,6 +194,11 @@ def subscribe_to_plan(
     if not plan or not plan.is_active:
         raise HTTPException(status_code=404, detail="Membership plan not found or inactive")
 
+    if payload.razorpay_order_id and payload.razorpay_payment_id and payload.razorpay_signature:
+        from backend.app.finance.razorpay_service import verify_payment_signature
+        if not verify_payment_signature(payload.razorpay_order_id, payload.razorpay_payment_id, payload.razorpay_signature):
+            raise HTTPException(status_code=400, detail="Invalid Razorpay cryptographic signature.")
+
     member = db.query(Member).filter(Member.user_id == current_user.id).first()
     if not member:
         member = Member(
@@ -237,6 +245,11 @@ def subscribe_to_plan(
             reference_id=f"SUB-{str(sub.id)[:8].upper()}",
             membership_number=member.membership_number,
             idempotency_key=f"MEMBERSHIP:{sub.id}",
+            payment_method="RAZORPAY" if payload.razorpay_payment_id else "UPI",
+            payment_reference=payload.razorpay_payment_id,
+            razorpay_order_id=payload.razorpay_order_id,
+            razorpay_payment_id=payload.razorpay_payment_id,
+            razorpay_signature=payload.razorpay_signature,
         )
         invoice_number = inv.invoice_number
     except Exception as e:

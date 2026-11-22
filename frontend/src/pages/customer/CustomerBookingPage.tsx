@@ -20,7 +20,9 @@ import {
   Timer,
   AlertTriangle,
 } from 'lucide-react';
-import { bookingsApi, normalizeApiError } from '../../services/api';
+import { bookingsApi, paymentsApi, normalizeApiError } from '../../services/api';
+import { openRazorpayModal } from '../../utils/razorpay';
+import { useAuth } from '../../hooks/useAuth';
 
 interface CourtItem {
   id: string;
@@ -50,6 +52,7 @@ const getSportFallbackImage = (sport: string) => {
 };
 
 export const CustomerBookingPage: React.FC = () => {
+  const { user } = useAuth();
   const [selectedSidebarSport, setSelectedSidebarSport] = useState<string>('Tennis');
   const [selectedFilterCategory, setSelectedFilterCategory] = useState<string>('ALL');
   const [searchQuery] = useState<string>('');
@@ -447,7 +450,7 @@ export const CustomerBookingPage: React.FC = () => {
       .catch(() => {});
   };
 
-  // Real court booking submission: calls backend API, stores in PostgreSQL, sends invoice email via SendGrid
+  // Real court booking submission: integrates Razorpay Standard Checkout SDK
   const confirmReservation = async () => {
     if (!activeBookingCourt) return;
     if (holdRemainingSeconds <= 0) {
@@ -461,24 +464,71 @@ export const CustomerBookingPage: React.FC = () => {
       setIsBookingSubmitting(true);
       setBookingError(null);
 
-      const res = await bookingsApi.createBooking({
-        court_id: activeBookingCourt.id,
-        booking_date: bookingDate,
-        start_time: timeSlot,
-        participant_count: 2,
+      // 1. Create Razorpay order via backend
+      const order = await paymentsApi.createOrder({
+        amount: activeBookingCourt.hourlyRate,
+        purpose: 'BOOKING',
+        reference_id: activeBookingCourt.id,
+        notes: {
+          court_name: activeBookingCourt.name,
+          sport: activeBookingCourt.sport,
+          booking_date: bookingDate,
+          start_time: timeSlot,
+        },
       });
 
-      setConfirmedBookingDetails({
-        id: res.id,
-        invoiceNumber: res.invoice_number,
+      // 2. Open Razorpay Checkout modal
+      await openRazorpayModal({
+        keyId: order.key_id,
+        orderId: order.order_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'Apex Sports Club',
+        description: `Court Booking: ${activeBookingCourt.name} (${selectedSlotLabel})`,
+        prefill: {
+          name: user?.fullName || '',
+          email: user?.email || '',
+          contact: user?.phoneNumber || '',
+        },
+        themeColor: '#083222',
+        onSuccess: async (rzpResult) => {
+          try {
+            // 3. Fulfill booking with cryptographically verified Razorpay tokens
+            const res = await bookingsApi.createBooking({
+              court_id: activeBookingCourt.id,
+              booking_date: bookingDate,
+              start_time: timeSlot,
+              participant_count: 2,
+              razorpay_order_id: rzpResult.razorpay_order_id,
+              razorpay_payment_id: rzpResult.razorpay_payment_id,
+              razorpay_signature: rzpResult.razorpay_signature,
+            });
+
+            setConfirmedBookingDetails({
+              id: res.id,
+              invoiceNumber: res.invoice_number,
+            });
+            setBookingConfirmed(true);
+            const tabId = getClientTabSessionId();
+            bookingsApi.getActiveHolds({ booking_date: bookingDate, client_session_id: tabId }).then(setActiveHolds).catch(() => {});
+          } catch (verifyErr) {
+            const errObj = normalizeApiError(verifyErr);
+            setBookingError(errObj.message || 'Payment verification failed.');
+          } finally {
+            setIsBookingSubmitting(false);
+          }
+        },
+        onDismiss: () => {
+          setIsBookingSubmitting(false);
+        },
+        onError: (err) => {
+          setIsBookingSubmitting(false);
+          setBookingError(err?.message || 'Razorpay checkout encountered an issue.');
+        },
       });
-      setBookingConfirmed(true);
-      // Refresh active holds
-      bookingsApi.getActiveHolds({ booking_date: bookingDate }).then(setActiveHolds).catch(() => {});
     } catch (err) {
       const errObj = normalizeApiError(err);
-      setBookingError(errObj.message || 'Failed to complete court reservation.');
-    } finally {
+      setBookingError(errObj.message || 'Failed to initialize payment gateway.');
       setIsBookingSubmitting(false);
     }
   };
@@ -1017,10 +1067,10 @@ export const CustomerBookingPage: React.FC = () => {
                     {isBookingSubmitting ? (
                       <>
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-950" />
-                        <span>Reserving...</span>
+                        <span>Processing...</span>
                       </>
                     ) : (
-                      <span>Confirm Booking</span>
+                      <span>Pay via Razorpay</span>
                     )}
                   </button>
                 </div>

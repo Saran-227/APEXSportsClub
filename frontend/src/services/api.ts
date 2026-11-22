@@ -352,8 +352,15 @@ export const membershipsApi = {
     }>>('/memberships/plans');
     return response.data;
   },
-  subscribe: async (planId: string) => {
-    const response = await apiClient.post('/memberships/subscribe', { plan_id: planId });
+  subscribe: async (planId: string, paymentProof?: {
+    razorpay_order_id?: string;
+    razorpay_payment_id?: string;
+    razorpay_signature?: string;
+  }) => {
+    const response = await apiClient.post('/memberships/subscribe', {
+      plan_id: planId,
+      ...paymentProof,
+    });
     return response.data;
   },
 };
@@ -412,6 +419,9 @@ export const bookingsApi = {
     start_time: string;
     participant_count?: number;
     notes?: string;
+    razorpay_order_id?: string;
+    razorpay_payment_id?: string;
+    razorpay_signature?: string;
   }) => {
     const response = await apiClient.post('/bookings', payload);
     return response.data;
@@ -519,6 +529,9 @@ export const shopApi = {
     items: Array<{ product_id: string; quantity: number }>;
     fulfilment_type?: string;
     delivery_address?: string;
+    razorpay_order_id?: string;
+    razorpay_payment_id?: string;
+    razorpay_signature?: string;
   }) => {
     const response = await apiClient.post('/shop/orders', payload);
     return response.data;
@@ -535,7 +548,15 @@ export const shopApi = {
     const response = await apiClient.get<Array<any>>('/shop/rentals');
     return response.data;
   },
-  bookRental: async (payload: { product_id: string; rental_start: string; rental_end: string; notes?: string }) => {
+  bookRental: async (payload: {
+    product_id: string;
+    rental_start: string;
+    rental_end: string;
+    notes?: string;
+    razorpay_order_id?: string;
+    razorpay_payment_id?: string;
+    razorpay_signature?: string;
+  }) => {
     const response = await apiClient.post('/shop/rentals', payload);
     return response.data;
   },
@@ -588,6 +609,10 @@ export const cafeteriaApi = {
     items: Array<{ menu_item_id: string; quantity: number; special_instructions?: string }>;
     order_type?: string;
     customer_notes?: string;
+    table_number?: string;
+    razorpay_order_id?: string;
+    razorpay_payment_id?: string;
+    razorpay_signature?: string;
   }) => {
     const response = await apiClient.post('/cafeteria/orders', payload);
     return response.data;
@@ -747,6 +772,56 @@ export const employeesApi = {
     return response.data;
   },
 };
+
+export const paymentsApi = {
+  getRazorpayConfig: async () => {
+    const response = await apiClient.get<{
+      key_id: string;
+      currency: string;
+      is_active: boolean;
+      merchant_name: string;
+      theme_color: string;
+    }>('/payments/razorpay/config');
+    return response.data;
+  },
+  createOrder: async (payload: {
+    amount: number;
+    purpose: 'BOOKING' | 'SHOP' | 'CAFETERIA' | 'MEMBERSHIP' | 'RENTAL' | string;
+    reference_id?: string;
+    notes?: Record<string, string>;
+  }) => {
+    const response = await apiClient.post<{
+      order_id: string;
+      amount: number;
+      amount_inr: number;
+      currency: string;
+      key_id: string;
+      purpose: string;
+      reference_id?: string;
+    }>('/payments/razorpay/create-order', payload);
+    return response.data;
+  },
+  verifyPayment: async (payload: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+    purpose: 'BOOKING' | 'SHOP' | 'CAFETERIA' | 'MEMBERSHIP' | 'RENTAL' | string;
+    payload: Record<string, any>;
+  }) => {
+    const response = await apiClient.post<{
+      success: boolean;
+      message: string;
+      purpose: string;
+      payment_id: string;
+      order_id: string;
+      invoice_number?: string;
+      reference_id?: string;
+      details?: Record<string, any>;
+    }>('/payments/razorpay/verify', payload);
+    return response.data;
+  },
+};
+
 
 
 

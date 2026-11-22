@@ -64,6 +64,9 @@ class CreateFoodOrderRequest(BaseModel):
     items: List[FoodOrderItemPayload]
     order_type: str = "DINE_IN"  # DINE_IN, PICKUP
     customer_notes: Optional[str] = None
+    razorpay_order_id: Optional[str] = None
+    razorpay_payment_id: Optional[str] = None
+    razorpay_signature: Optional[str] = None
 
 
 class FoodOrderItemResponse(BaseModel):
@@ -228,6 +231,11 @@ def create_food_order(
     if not payload.items:
         raise HTTPException(status_code=400, detail="Order must contain at least one item")
 
+    if payload.razorpay_order_id and payload.razorpay_payment_id and payload.razorpay_signature:
+        from backend.app.finance.razorpay_service import verify_payment_signature
+        if not verify_payment_signature(payload.razorpay_order_id, payload.razorpay_payment_id, payload.razorpay_signature):
+            raise HTTPException(status_code=400, detail="Invalid Razorpay cryptographic signature.")
+
     first_item = db.query(MenuItem).filter(MenuItem.id == payload.items[0].menu_item_id).first()
     if not first_item:
         raise HTTPException(status_code=404, detail="Menu item not found")
@@ -312,6 +320,11 @@ def create_food_order(
             reference_id=order.order_number,
             membership_number=member.membership_number if member else None,
             idempotency_key=f"FOOD_ORDER:{order.id}",
+            payment_method="RAZORPAY" if payload.razorpay_payment_id else "UPI",
+            payment_reference=payload.razorpay_payment_id,
+            razorpay_order_id=payload.razorpay_order_id,
+            razorpay_payment_id=payload.razorpay_payment_id,
+            razorpay_signature=payload.razorpay_signature,
         )
         invoice_number = inv.invoice_number
     except Exception as e:

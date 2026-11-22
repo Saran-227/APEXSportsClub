@@ -71,6 +71,9 @@ class CreateShopOrderRequest(BaseModel):
     items: List[CartItemPayload]
     fulfilment_type: str = "PICKUP"  # PICKUP, DELIVERY
     delivery_address: Optional[str] = None
+    razorpay_order_id: Optional[str] = None
+    razorpay_payment_id: Optional[str] = None
+    razorpay_signature: Optional[str] = None
 
 
 class OrderItemResponse(BaseModel):
@@ -110,6 +113,9 @@ class CreateRentalRequest(BaseModel):
     rental_start: datetime
     rental_end: datetime
     notes: Optional[str] = None
+    razorpay_order_id: Optional[str] = None
+    razorpay_payment_id: Optional[str] = None
+    razorpay_signature: Optional[str] = None
 
 
 class EquipmentRentalResponse(BaseModel):
@@ -279,6 +285,11 @@ def create_shop_order(
     if not payload.items:
         raise HTTPException(status_code=400, detail="Cart cannot be empty")
 
+    if payload.razorpay_order_id and payload.razorpay_payment_id and payload.razorpay_signature:
+        from backend.app.finance.razorpay_service import verify_payment_signature
+        if not verify_payment_signature(payload.razorpay_order_id, payload.razorpay_payment_id, payload.razorpay_signature):
+            raise HTTPException(status_code=400, detail="Invalid Razorpay cryptographic signature.")
+
     vendor_id = None
     total_amount = Decimal("0.00")
     order_items_to_create = []
@@ -371,6 +382,11 @@ def create_shop_order(
             reference_id=order.order_number,
             membership_number=member.membership_number if member else None,
             idempotency_key=f"SHOP_ORDER:{order.id}",
+            payment_method="RAZORPAY" if payload.razorpay_payment_id else "UPI",
+            payment_reference=payload.razorpay_payment_id,
+            razorpay_order_id=payload.razorpay_order_id,
+            razorpay_payment_id=payload.razorpay_payment_id,
+            razorpay_signature=payload.razorpay_signature,
         )
         invoice_number = inv.invoice_number
     except Exception as e:
@@ -485,6 +501,11 @@ def book_equipment_rental(
     if not prod:
         raise HTTPException(status_code=404, detail="Rental item not found or not available for rent.")
 
+    if payload.razorpay_order_id and payload.razorpay_payment_id and payload.razorpay_signature:
+        from backend.app.finance.razorpay_service import verify_payment_signature
+        if not verify_payment_signature(payload.razorpay_order_id, payload.razorpay_payment_id, payload.razorpay_signature):
+            raise HTTPException(status_code=400, detail="Invalid Razorpay cryptographic signature.")
+
     duration_days = max(1, (payload.rental_end - payload.rental_start).days)
     daily_rate = prod.rental_price_per_day or Decimal("300.00")
     rental_fee = daily_rate * Decimal(duration_days)
@@ -525,6 +546,11 @@ def book_equipment_rental(
             reference_id=f"RNT-{str(rental.id)[:8].upper()}",
             membership_number=member.membership_number if member else None,
             idempotency_key=f"RENTAL:{rental.id}",
+            payment_method="RAZORPAY" if payload.razorpay_payment_id else "UPI",
+            payment_reference=payload.razorpay_payment_id,
+            razorpay_order_id=payload.razorpay_order_id,
+            razorpay_payment_id=payload.razorpay_payment_id,
+            razorpay_signature=payload.razorpay_signature,
         )
         invoice_number = inv.invoice_number
     except Exception as e:

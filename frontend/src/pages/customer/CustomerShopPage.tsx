@@ -19,7 +19,9 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
-import { shopApi, normalizeApiError } from '../../services/api';
+import { shopApi, paymentsApi, normalizeApiError } from '../../services/api';
+import { openRazorpayModal } from '../../utils/razorpay';
+import { useAuth } from '../../hooks/useAuth';
 import { MOCK_ALL_PRODUCTS } from '../../data/mockSportsData';
 
 interface ProductItem {
@@ -47,6 +49,7 @@ const getCategoryFallbackImage = (category: string) => {
 };
 
 export const CustomerShopPage: React.FC = () => {
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const targetProductId = searchParams.get('product') || '';
   const initialSearch = searchParams.get('search') || '';
@@ -210,29 +213,73 @@ export const CustomerShopPage: React.FC = () => {
     }
   }, [targetProductId, allAvailableProducts, selectedCategory]);
 
-  // Checkout order submission: calls backend API, persists in PostgreSQL & sends real email
+  // Checkout order submission: initiates Razorpay Standard Checkout SDK
   const handleProceedToCheckout = async () => {
     if (cartItems.length === 0) return;
     try {
       setIsCheckingOut(true);
       setCheckoutError(null);
-      const res = await shopApi.createOrder({
-        items: cartItems.map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-        })),
-        fulfilment_type: 'PICKUP',
+
+      // 1. Create Razorpay order on backend
+      const order = await paymentsApi.createOrder({
+        amount: totalAmount,
+        purpose: 'SHOP',
+        notes: {
+          items_count: String(cartItems.length),
+        },
       });
 
-      setOrderSuccess({
-        orderNumber: res.order_number,
-        invoiceNumber: res.invoice_number,
+      // 2. Launch Razorpay Checkout Modal
+      await openRazorpayModal({
+        keyId: order.key_id,
+        orderId: order.order_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'Apex Pro Sports Shop',
+        description: `Pro Shop Order (${cartItems.length} items)`,
+        prefill: {
+          name: user?.fullName || '',
+          email: user?.email || '',
+          contact: user?.phoneNumber || '',
+        },
+        themeColor: '#083222',
+        onSuccess: async (rzpResult) => {
+          try {
+            // 3. Fulfill shop order with verified Razorpay tokens
+            const res = await shopApi.createOrder({
+              items: cartItems.map((item) => ({
+                product_id: item.product.id,
+                quantity: item.quantity,
+              })),
+              fulfilment_type: 'PICKUP',
+              razorpay_order_id: rzpResult.razorpay_order_id,
+              razorpay_payment_id: rzpResult.razorpay_payment_id,
+              razorpay_signature: rzpResult.razorpay_signature,
+            });
+
+            setOrderSuccess({
+              orderNumber: res.order_number,
+              invoiceNumber: res.invoice_number,
+            });
+            clearCart();
+          } catch (fulfillErr) {
+            const errObj = normalizeApiError(fulfillErr);
+            setCheckoutError(errObj.message || 'Failed to complete order verification.');
+          } finally {
+            setIsCheckingOut(false);
+          }
+        },
+        onDismiss: () => {
+          setIsCheckingOut(false);
+        },
+        onError: (err) => {
+          setIsCheckingOut(false);
+          setCheckoutError(err?.message || 'Razorpay checkout encountered an issue.');
+        },
       });
-      clearCart();
     } catch (err) {
       const errObj = normalizeApiError(err);
-      setCheckoutError(errObj.message || 'Failed to process checkout order.');
-    } finally {
+      setCheckoutError(errObj.message || 'Failed to initialize payment gateway.');
       setIsCheckingOut(false);
     }
   };
@@ -768,16 +815,10 @@ export const CustomerShopPage: React.FC = () => {
                     ₹{totalAmount.toLocaleString('en-IN')}
                   </span>
                 </div>
-                <div className="flex items-center justify-between text-xs text-slate-600">
-                  <span>Member Club Discount (10%)</span>
-                  <span className="font-bold text-emerald-700">
-                    -₹{Math.round(totalAmount * 0.1).toLocaleString('en-IN')}
-                  </span>
-                </div>
                 <div className="border-t border-slate-200 pt-2 flex items-center justify-between text-sm font-extrabold text-slate-950">
-                  <span>Total Amount</span>
-                  <span className="text-base text-emerald-700">
-                    ₹{Math.round(totalAmount * 0.9).toLocaleString('en-IN')}
+                  <span>Total Payable</span>
+                  <span className="text-base text-emerald-700 font-black">
+                    ₹{totalAmount.toLocaleString('en-IN')}
                   </span>
                 </div>
 
@@ -790,10 +831,10 @@ export const CustomerShopPage: React.FC = () => {
                   {isCheckingOut ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin text-slate-950" />
-                      <span>Processing & Generating Invoice...</span>
+                      <span>Processing Payment...</span>
                     </>
                   ) : (
-                    <span>Proceed to Checkout</span>
+                    <span>Pay via Razorpay</span>
                   )}
                 </button>
               </div>

@@ -72,6 +72,9 @@ def create_or_get_invoice(
     notes: Optional[str] = None,
     idempotency_key: Optional[str] = None,
     send_email: bool = True,
+    razorpay_order_id: Optional[str] = None,
+    razorpay_payment_id: Optional[str] = None,
+    razorpay_signature: Optional[str] = None,
 ) -> Invoice:
     """Create invoice, record transaction payment, generate PDF, and deliver via SendGrid."""
     # 1. Idempotency Check
@@ -92,19 +95,44 @@ def create_or_get_invoice(
     if tax_amount is None:
         tax_amount = sum((Decimal(str(it.get("tax", 0))) for it in items), Decimal("0.00"))
 
-    # 2. Record Completed Transaction in payments table
-    payment = Payment(
-        user_id=user.id,
-        amount=amount,
-        payment_method=payment_method,
-        status="COMPLETED",
-        reference_type=transaction_type.upper(),
-        reference_id=reference_id or f"TXN-{uuid.uuid4().hex[:8].upper()}",
-        transaction_reference=payment_reference or f"TXN_REF_{uuid.uuid4().hex[:10].upper()}",
-        notes=notes,
-    )
-    db.add(payment)
-    db.flush()
+    # 2. Record Completed Transaction in payments table (reuse existing pending payment if present)
+    resolved_method = "RAZORPAY" if (razorpay_payment_id or payment_method == "RAZORPAY") else payment_method
+    resolved_ref = payment_reference or razorpay_payment_id or f"TXN_REF_{uuid.uuid4().hex[:10].upper()}"
+
+    payment = None
+    if razorpay_order_id:
+        payment = db.query(Payment).filter(Payment.razorpay_order_id == razorpay_order_id).first()
+    if not payment and payment_reference:
+        payment = db.query(Payment).filter(Payment.transaction_reference == payment_reference).first()
+
+    if payment:
+        payment.status = "COMPLETED"
+        payment.payment_method = resolved_method
+        payment.amount = amount
+        if razorpay_payment_id:
+            payment.razorpay_payment_id = razorpay_payment_id
+        if razorpay_signature:
+            payment.razorpay_signature = razorpay_signature
+        if reference_id:
+            payment.reference_id = reference_id
+        payment.transaction_reference = resolved_ref
+        payment.reference_type = transaction_type.upper()
+    else:
+        payment = Payment(
+            user_id=user.id,
+            amount=amount,
+            payment_method=resolved_method,
+            status="COMPLETED",
+            reference_type=transaction_type.upper(),
+            reference_id=reference_id or f"TXN-{uuid.uuid4().hex[:8].upper()}",
+            transaction_reference=resolved_ref,
+            razorpay_order_id=razorpay_order_id,
+            razorpay_payment_id=razorpay_payment_id,
+            razorpay_signature=razorpay_signature,
+            notes=notes,
+        )
+        db.add(payment)
+        db.flush()
 
     # 3. Generate Sequential Invoice Number with retry on collision
     for attempt in range(5):
