@@ -37,6 +37,9 @@ class Court(Base):
     bookings: Mapped[list["CourtBooking"]] = relationship(
         "CourtBooking", back_populates="court", cascade="all, delete-orphan"
     )
+    holds: Mapped[list["CourtHold"]] = relationship(
+        "CourtHold", back_populates="court", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("ix_courts_sport_active", "sport", "is_active"),
@@ -83,3 +86,35 @@ class CourtBooking(Base):
         Index("ix_court_bookings_court_times", "court_id", "booking_date", "start_time", "end_time", "status"),
         Index("ix_court_bookings_user_daily", "user_id", "booking_date", "status"),
     )
+
+
+class CourtHold(Base):
+    """Temporary reservation hold locking a court/slot for 5 minutes while user is confirming."""
+
+    __tablename__ = "court_holds"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    court_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("courts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    booking_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    client_session_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    # Relationships
+    court: Mapped["Court"] = relationship("Court", back_populates="holds")
+    user: Mapped["backend.app.auth.models.User"] = relationship("User")
+
+    __table_args__ = (
+        Index("ix_court_holds_slot_lookup", "court_id", "booking_date", "start_time", "is_active", "expires_at"),
+    )
+

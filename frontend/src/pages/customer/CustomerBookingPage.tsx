@@ -16,6 +16,9 @@ import {
   ChevronDown,
   AlertCircle,
   Loader2,
+  Lock,
+  Timer,
+  AlertTriangle,
 } from 'lucide-react';
 import { bookingsApi, normalizeApiError } from '../../services/api';
 
@@ -110,6 +113,108 @@ export const CustomerBookingPage: React.FC = () => {
     id: string;
     invoiceNumber?: string;
   } | null>(null);
+
+  // 5-minute reservation hold states
+  const [activeHolds, setActiveHolds] = useState<any[]>([]);
+  const [lockedCourtMessage, setLockedCourtMessage] = useState<string | null>(null);
+  const [lockedCourtPopup, setLockedCourtPopup] = useState<{
+    court: CourtItem;
+    remainingSeconds: number;
+    message: string;
+  } | null>(null);
+  const [holdRemainingSeconds, setHoldRemainingSeconds] = useState<number>(300);
+  const [isHoldAcquiring, setIsHoldAcquiring] = useState<boolean>(false);
+
+  // Tab session ID to isolate concurrent browser tabs even if sharing the same user login
+  const getClientTabSessionId = () => {
+    let id = sessionStorage.getItem('apex_booking_tab_id');
+    if (!id) {
+      id = 'tab_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+      sessionStorage.setItem('apex_booking_tab_id', id);
+    }
+    return id;
+  };
+
+  // Live 1-second countdown ticker for all active holds and locked modal timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveHolds((prev) =>
+        prev
+          .map((h) => ({
+            ...h,
+            remaining_seconds: Math.max(0, (h.remaining_seconds || 0) - 1),
+          }))
+          .filter((h) => h.remaining_seconds > 0)
+      );
+
+      setLockedCourtPopup((prev) => {
+        if (!prev) return null;
+        const nextSecs = Math.max(0, prev.remainingSeconds - 1);
+        return {
+          ...prev,
+          remainingSeconds: nextSecs,
+        };
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Poll active 5-minute holds across courts
+  useEffect(() => {
+    let isMounted = true;
+    const tabId = getClientTabSessionId();
+    const fetchHolds = async () => {
+      try {
+        const holds = await bookingsApi.getActiveHolds({
+          booking_date: bookingDate,
+          client_session_id: tabId,
+        });
+        if (isMounted) {
+          setActiveHolds(holds);
+        }
+      } catch (err) {
+        // silent fail on hold polling
+      }
+    };
+    fetchHolds();
+    const interval = setInterval(fetchHolds, 4000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [bookingDate]);
+
+  // 5-minute countdown timer while user is on the booking popup
+  useEffect(() => {
+    if (!activeBookingCourt || bookingConfirmed) return;
+    const timer = setInterval(() => {
+      setHoldRemainingSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [activeBookingCourt, bookingConfirmed]);
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const getCourtHoldInfo = (courtId: string) => {
+    const tabId = getClientTabSessionId();
+    return activeHolds.find(
+      (h) =>
+        String(h.court_id) === String(courtId) &&
+        h.start_time === timeSlot &&
+        (!h.held_by_current_user || (h.client_session_id && h.client_session_id !== tabId))
+    );
+  };
 
   // Fetch real courts from PostgreSQL backend
   useEffect(() => {
@@ -262,16 +367,96 @@ export const CustomerBookingPage: React.FC = () => {
       });
   }, [displayCourts, selectedFilterCategory, searchQuery, sortBy]);
 
-  const handleBookNow = (court: CourtItem) => {
-    setActiveBookingCourt(court);
+  const handleBookNow = async (court: CourtItem) => {
+    setLockedCourtMessage(null);
+    setBookingError(null);
+
+    // 1. Check if court is currently held by someone else
+    const heldByOther = getCourtHoldInfo(court.id);
+    if (heldByOther) {
+      // Open dedicated popup for User B with the live timer and message
+      setLockedCourtPopup({
+        court,
+        remainingSeconds: heldByOther.remaining_seconds || 300,
+        message:
+          "This court is currently in the booking process by someone else right now. Please select another court or try again in a few minutes.",
+      });
+      return;
+    }
+
+    // 2. Real-time PostgreSQL 5-minute hold acquisition
+    try {
+      setIsHoldAcquiring(true);
+      const tabId = getClientTabSessionId();
+      const holdRes = await bookingsApi.acquireHold(court.id, {
+        booking_date: bookingDate,
+        start_time: timeSlot,
+        client_session_id: tabId,
+      });
+
+      // Acquired successfully!
+      setActiveBookingCourt(court);
+      setBookingConfirmed(false);
+      setConfirmedBookingDetails(null);
+      setHoldRemainingSeconds(holdRes.remaining_seconds || 300);
+    } catch (err: any) {
+      const errObj = normalizeApiError(err);
+      const msg =
+        errObj.message ||
+        "This court is currently in the booking process by someone else right now. Please select another court or try again in a few minutes.";
+      
+      const remSecs = (err?.response?.headers && Number(err.response.headers['retry-after'])) || 300;
+      setLockedCourtPopup({
+        court,
+        remainingSeconds: remSecs,
+        message: msg,
+      });
+
+      // Refresh active holds
+      const tabId = getClientTabSessionId();
+      bookingsApi
+        .getActiveHolds({ booking_date: bookingDate, client_session_id: tabId })
+        .then(setActiveHolds)
+        .catch(() => {});
+    } finally {
+      setIsHoldAcquiring(false);
+    }
+  };
+
+  const handleCloseBookingModal = async () => {
+    if (activeBookingCourt && !bookingConfirmed) {
+      try {
+        const tabId = getClientTabSessionId();
+        await bookingsApi.releaseHold(activeBookingCourt.id, {
+          booking_date: bookingDate,
+          start_time: timeSlot,
+          client_session_id: tabId,
+        });
+      } catch (e) {
+        // silent release
+      }
+    }
+    setActiveBookingCourt(null);
     setBookingConfirmed(false);
     setBookingError(null);
-    setConfirmedBookingDetails(null);
+    // Refresh active holds
+    const tabId = getClientTabSessionId();
+    bookingsApi
+      .getActiveHolds({ booking_date: bookingDate, client_session_id: tabId })
+      .then(setActiveHolds)
+      .catch(() => {});
   };
 
   // Real court booking submission: calls backend API, stores in PostgreSQL, sends invoice email via SendGrid
   const confirmReservation = async () => {
     if (!activeBookingCourt) return;
+    if (holdRemainingSeconds <= 0) {
+      setBookingError(
+        "Your 5-minute reservation hold has expired. Please close this window and re-book to secure your slot."
+      );
+      return;
+    }
+
     try {
       setIsBookingSubmitting(true);
       setBookingError(null);
@@ -288,6 +473,8 @@ export const CustomerBookingPage: React.FC = () => {
         invoiceNumber: res.invoice_number,
       });
       setBookingConfirmed(true);
+      // Refresh active holds
+      bookingsApi.getActiveHolds({ booking_date: bookingDate }).then(setActiveHolds).catch(() => {});
     } catch (err) {
       const errObj = normalizeApiError(err);
       setBookingError(errObj.message || 'Failed to complete court reservation.');
@@ -449,6 +636,28 @@ export const CustomerBookingPage: React.FC = () => {
 
         {/* ================= RIGHT MAIN AREA ================= */}
         <div className="lg:col-span-8 space-y-6">
+          {/* Locked Court Alert Banner (if User B tries to open a court locked by User A) */}
+          {lockedCourtMessage && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-start justify-between gap-3 shadow-md animate-fadeIn">
+              <div className="flex items-start gap-3">
+                <div className="h-8 w-8 rounded-xl bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0 mt-0.5 font-bold">
+                  <Lock className="h-4 w-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-amber-900 text-sm">Court Currently In Booking Process</h4>
+                  <p className="text-amber-800 mt-0.5 leading-relaxed">{lockedCourtMessage}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLockedCourtMessage(null)}
+                className="p-1.5 rounded-lg hover:bg-amber-100 text-amber-600 hover:text-amber-900 transition cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
           {/* Top Hero Banner with Slanted Court Photo */}
           <div className="relative rounded-[32px] overflow-hidden bg-[#FAF8F5] border border-[#E8E2D5] min-h-[175px] sm:min-h-[195px] flex items-center p-6 sm:p-8 shadow-sm">
             <div
@@ -496,7 +705,7 @@ export const CustomerBookingPage: React.FC = () => {
           </div>
 
           {/* Section Header: AVAILABLE COURTS + Sort Dropdown */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between" id="available-courts-heading">
             <h2 className="text-xl sm:text-2xl font-black italic uppercase text-slate-950 font-display-sport tracking-tight">
               AVAILABLE COURTS ({filteredCourts.length})
             </h2>
@@ -517,70 +726,109 @@ export const CustomerBookingPage: React.FC = () => {
 
           {/* Grid of Detailed Court Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-            {filteredCourts.map((court) => (
-              <div
-                key={court.id}
-                className="bg-white rounded-[24px] p-3.5 sm:p-4 border border-[#E8E2D5] shadow-sm hover:shadow-md transition flex flex-col sm:flex-row gap-3.5 sm:gap-4 items-stretch group"
-              >
-                {/* Court Photo on Left */}
-                <div className="relative w-full sm:w-[48%] h-44 sm:h-auto min-h-[148px] rounded-[18px] overflow-hidden bg-slate-100 shrink-0">
-                  <img
-                    src={court.image}
-                    alt={court.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                  />
+            {filteredCourts.map((court) => {
+              const heldByOther = getCourtHoldInfo(court.id);
+              return (
+                <div
+                  key={court.id}
+                  className={`bg-white rounded-[24px] p-3.5 sm:p-4 border transition flex flex-col sm:flex-row gap-3.5 sm:gap-4 items-stretch group relative ${
+                    heldByOther
+                      ? 'border-amber-300 ring-2 ring-amber-300/40 bg-amber-50/10'
+                      : 'border-[#E8E2D5] shadow-sm hover:shadow-md'
+                  }`}
+                >
+                  {/* Court Photo on Left */}
+                  <div className="relative w-full sm:w-[48%] h-44 sm:h-auto min-h-[148px] rounded-[18px] overflow-hidden bg-slate-100 shrink-0">
+                    <img
+                      src={court.image}
+                      alt={court.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    />
+                    {heldByOther && (
+                      <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center p-2.5 text-center">
+                        <span className="px-2.5 py-1 rounded-full bg-amber-500 text-slate-950 font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-md">
+                          <Lock className="h-3 w-3" />
+                          <span>In Booking Process</span>
+                        </span>
+                        <span className="mt-1 font-mono font-bold text-amber-300 text-[11px] flex items-center gap-1">
+                          <Timer className="h-3 w-3 text-amber-400" />
+                          {formatTimer(heldByOther.remaining_seconds || 300)} left
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Court Info on Right */}
+                  <div className="w-full sm:w-[52%] flex flex-col justify-between py-0.5 space-y-2">
+                    <div className="space-y-1">
+                      <div className="flex items-start justify-between gap-1.5">
+                        <h3 className="text-base sm:text-[17px] font-bold text-slate-950 leading-tight">
+                          {court.name}
+                        </h3>
+                        {heldByOther ? (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] sm:text-[11px] font-bold flex items-center gap-1 shrink-0 border border-amber-200">
+                            <Lock className="h-3 w-3 text-amber-700" />
+                            <span>In Booking ({formatTimer(heldByOther.remaining_seconds || 300)})</span>
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-[#E5F9D8] text-[#15803D] text-[10px] sm:text-[11px] font-bold flex items-center gap-1 shrink-0">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                            <span>Available</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-slate-500 font-normal">
+                        {court.type} • {court.surface}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1 text-xs text-slate-600">
+                      <div className="flex items-center gap-1.5">
+                        <Users className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <span>Up to {court.capacity} players</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-slate-700 font-semibold">
+                        <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />
+                        <span>{court.rating} ({court.reviewsCount})</span>
+                      </div>
+                    </div>
+
+                    {/* Price & Book Button */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-1">
+                      <div>
+                        <span className="text-xl sm:text-2xl font-black text-slate-950">
+                          {court.hourlyRateDisplay}
+                        </span>
+                        <span className="text-xs text-slate-500 font-medium"> / hr</span>
+                      </div>
+
+                      {heldByOther ? (
+                        <button
+                          type="button"
+                          onClick={() => handleBookNow(court)}
+                          className="px-3.5 py-2 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-300 text-amber-900 text-[10px] sm:text-[11px] font-black flex items-center gap-1.5 transition shadow-xs cursor-pointer uppercase tracking-wider"
+                          title="This court is currently in the booking process by another member. Click to view status."
+                        >
+                          <Lock className="h-3.5 w-3.5 text-amber-700" />
+                          <span>IN BOOKING ({formatTimer(heldByOther.remaining_seconds || 300)})</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={isHoldAcquiring}
+                          onClick={() => handleBookNow(court)}
+                          className="px-4 py-2 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 text-[11px] font-black flex items-center gap-1 transition shadow-sm cursor-pointer uppercase tracking-wider disabled:opacity-50"
+                        >
+                          <span>BOOK NOW</span>
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-
-                {/* Court Info on Right */}
-                <div className="w-full sm:w-[52%] flex flex-col justify-between py-0.5 space-y-2">
-                  <div className="space-y-1">
-                    <div className="flex items-start justify-between gap-1.5">
-                      <h3 className="text-base sm:text-[17px] font-bold text-slate-950 leading-tight">
-                        {court.name}
-                      </h3>
-                      <span className="px-2 py-0.5 rounded-full bg-[#E5F9D8] text-[#15803D] text-[10px] sm:text-[11px] font-bold flex items-center gap-1 shrink-0">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                        <span>Available</span>
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-slate-500 font-normal">
-                      {court.type} • {court.surface}
-                    </p>
-                  </div>
-
-                  <div className="space-y-1 text-xs text-slate-600">
-                    <div className="flex items-center gap-1.5">
-                      <Users className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                      <span>Up to {court.capacity} players</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-slate-700 font-semibold">
-                      <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />
-                      <span>{court.rating} ({court.reviewsCount})</span>
-                    </div>
-                  </div>
-
-                  {/* Price & Book Button */}
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-1">
-                    <div>
-                      <span className="text-xl sm:text-2xl font-black text-slate-950">
-                        {court.hourlyRateDisplay}
-                      </span>
-                      <span className="text-xs text-slate-500 font-medium"> / hr</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleBookNow(court)}
-                      className="px-4 py-2 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 text-[11px] font-black flex items-center gap-1 transition shadow-sm cursor-pointer uppercase tracking-wider"
-                    >
-                      <span>BOOK NOW</span>
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Bottom Section: WHY BOOK WITH APEX? */}
@@ -633,14 +881,10 @@ export const CustomerBookingPage: React.FC = () => {
       {/* Booking Confirmation Modal */}
       {activeBookingCourt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 border border-slate-200 shadow-2xl relative animate-scaleUp">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 border border-slate-200 shadow-2xl relative animate-scaleUp">
             <button
               type="button"
-              onClick={() => {
-                setActiveBookingCourt(null);
-                setBookingConfirmed(false);
-                setBookingError(null);
-              }}
+              onClick={handleCloseBookingModal}
               className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
             >
               <X className="h-5 w-5" />
@@ -683,10 +927,7 @@ export const CustomerBookingPage: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setActiveBookingCourt(null);
-                    setBookingConfirmed(false);
-                  }}
+                  onClick={handleCloseBookingModal}
                   className="w-full py-3 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 text-xs font-black transition cursor-pointer uppercase tracking-wider"
                 >
                   Done
@@ -694,6 +935,23 @@ export const CustomerBookingPage: React.FC = () => {
               </div>
             ) : (
               <>
+                {/* 5-Minute Hold Countdown Ticker */}
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-[#083222] text-white text-xs shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <Timer className="h-4 w-4 text-[#CCFF00] shrink-0" />
+                    <span className="font-medium">Court Reserved for 5 Minutes:</span>
+                  </div>
+                  <span
+                    className={`font-mono font-black text-xs px-2.5 py-1 rounded-lg ${
+                      holdRemainingSeconds <= 60
+                        ? 'bg-rose-500 text-white animate-pulse'
+                        : 'bg-[#CCFF00] text-slate-950'
+                    }`}
+                  >
+                    {formatTimer(holdRemainingSeconds)}
+                  </span>
+                </div>
+
                 <div className="flex items-center gap-3.5">
                   <img
                     src={activeBookingCourt.image}
@@ -705,6 +963,14 @@ export const CustomerBookingPage: React.FC = () => {
                     <p className="text-xs text-slate-500">{activeBookingCourt.type} • {locationName}</p>
                   </div>
                 </div>
+
+                {/* Expired Hold Alert */}
+                {holdRemainingSeconds <= 0 && (
+                  <div className="p-3 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                    <span>Your 5-minute reservation hold has expired. Please cancel and re-book to secure your time slot.</span>
+                  </div>
+                )}
 
                 {/* Error Banner */}
                 {bookingError && (
@@ -737,14 +1003,14 @@ export const CustomerBookingPage: React.FC = () => {
                   <button
                     type="button"
                     disabled={isBookingSubmitting}
-                    onClick={() => setActiveBookingCourt(null)}
+                    onClick={handleCloseBookingModal}
                     className="flex-1 py-2.5 rounded-full border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
-                    disabled={isBookingSubmitting}
+                    disabled={isBookingSubmitting || holdRemainingSeconds <= 0}
                     onClick={confirmReservation}
                     className="flex-1 py-2.5 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] disabled:bg-slate-200 disabled:text-slate-500 text-slate-950 text-xs font-black transition shadow-md shadow-[#CCFF00]/25 cursor-pointer uppercase tracking-wider flex items-center justify-center gap-1.5"
                   >
@@ -760,6 +1026,109 @@ export const CustomerBookingPage: React.FC = () => {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {/* User B: Court Locked In Booking Process Modal */}
+      {lockedCourtPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 border border-amber-300 shadow-2xl relative animate-scaleUp">
+            <button
+              type="button"
+              onClick={() => setLockedCourtPopup(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            {/* Icon & Heading */}
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 rounded-2xl bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0">
+                <Lock className="h-6 w-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-950 font-display-sport uppercase tracking-tight">
+                  Court In Booking Process
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  {lockedCourtPopup.court.name} • {lockedCourtPopup.court.sport}
+                </p>
+              </div>
+            </div>
+
+            {/* Alert Message Box */}
+            <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-300 text-amber-950 text-xs space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                <p className="font-semibold leading-relaxed">
+                  {lockedCourtPopup.message}
+                </p>
+              </div>
+              <p className="text-[11px] text-amber-800 leading-normal pl-6">
+                Another member is currently completing the booking confirmation for this court. To prevent double-booking, the court is held temporarily for 5 minutes.
+              </p>
+            </div>
+
+            {/* Live Hold Countdown Timer */}
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#083222] text-white text-xs shadow-sm">
+              <div className="flex items-center gap-2">
+                <Timer className="h-4 w-4 text-[#CCFF00] shrink-0" />
+                <div>
+                  <span className="font-bold text-white block">Hold Countdown:</span>
+                  <span className="text-[10px] text-white/70">Releases slot automatically if not confirmed</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <span
+                  className={`font-mono font-black text-sm px-2.5 py-1 rounded-lg inline-block ${
+                    lockedCourtPopup.remainingSeconds <= 30
+                      ? 'bg-rose-500 text-white animate-pulse'
+                      : 'bg-[#CCFF00] text-slate-950'
+                  }`}
+                >
+                  {formatTimer(lockedCourtPopup.remainingSeconds)}
+                </span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="pt-2 space-y-2">
+              {lockedCourtPopup.remainingSeconds <= 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const courtToBook = lockedCourtPopup.court;
+                    setLockedCourtPopup(null);
+                    handleBookNow(courtToBook);
+                  }}
+                  className="w-full py-3 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 text-xs font-black transition cursor-pointer uppercase tracking-wider shadow-md shadow-[#CCFF00]/25 flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Hold Expired — Book Court Now</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLockedCourtPopup(null);
+                    const el = document.getElementById('available-courts-heading');
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="w-full py-3 rounded-full bg-[#CCFF00] hover:bg-[#bbf000] text-slate-950 text-xs font-black transition cursor-pointer uppercase tracking-wider shadow-md shadow-[#CCFF00]/25 flex items-center justify-center gap-2"
+                >
+                  <span>Select Another Court</span>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setLockedCourtPopup(null)}
+                className="w-full py-2.5 rounded-full border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                Close Window
+              </button>
+            </div>
           </div>
         </div>
       )}

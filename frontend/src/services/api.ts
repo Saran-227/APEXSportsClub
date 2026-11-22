@@ -416,6 +416,44 @@ export const bookingsApi = {
     const response = await apiClient.post('/bookings', payload);
     return response.data;
   },
+  acquireHold: async (courtId: string, payload: { booking_date: string; start_time: string; client_session_id?: string }) => {
+    const response = await apiClient.post<{
+      hold_id: string;
+      court_id: string;
+      court_name: string;
+      sport: string;
+      booking_date: string;
+      start_time: string;
+      expires_at: string;
+      remaining_seconds: number;
+      held_by_current_user: boolean;
+      client_session_id?: string;
+      message: string;
+    }>(`/courts/${courtId}/hold`, payload);
+    return response.data;
+  },
+  releaseHold: async (courtId: string, payload?: { booking_date: string; start_time: string; client_session_id?: string }) => {
+    const response = await apiClient.post<{ message: string; released_count: number }>(
+      `/courts/${courtId}/release-hold`,
+      payload
+    );
+    return response.data;
+  },
+  getActiveHolds: async (params?: { court_id?: string; booking_date?: string; client_session_id?: string }) => {
+    const response = await apiClient.get<Array<{
+      hold_id: string;
+      court_id: string;
+      court_name: string;
+      sport: string;
+      booking_date: string;
+      start_time: string;
+      expires_at: string;
+      remaining_seconds: number;
+      held_by_current_user: boolean;
+      client_session_id?: string;
+    }>>('/courts/holds/active', { params });
+    return response.data;
+  },
   cancelBooking: async (bookingId: string) => {
     const response = await apiClient.patch(`/bookings/${bookingId}/cancel`);
     return response.data;

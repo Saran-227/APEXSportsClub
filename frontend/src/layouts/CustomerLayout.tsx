@@ -28,12 +28,15 @@ export const CustomerLayout: React.FC = () => {
     location.pathname.includes('shop') ||
     location.pathname.includes('book-court') ||
     location.pathname.includes('courts') ||
-    location.pathname.includes('events');
+    location.pathname.includes('events') ||
+    location.pathname.includes('cafeteria');
 
   const searchPlaceholder = location.pathname.includes('shop')
     ? 'Search for gear, apparel...'
     : location.pathname.includes('events')
     ? 'Search events, mixers, games...'
+    : location.pathname.includes('cafeteria')
+    ? 'Search cafe menu, smoothies, bowls...'
     : 'Search courts, sports or location...';
 
   const handleLogout = async () => {
@@ -41,13 +44,14 @@ export const CustomerLayout: React.FC = () => {
     navigate('/login');
   };
 
-  // Nav links: Coaching is removed, Tournaments is renamed to Events
+  // Nav links: Coaching is removed, Tournaments is renamed to Events, Cafeteria included
   const navLinks = [
     { name: 'Home', to: '/customer/dashboard' },
     { name: 'Courts', to: '/customer/book-court' },
     { name: 'Events', to: '/customer/events' },
     { name: 'Membership', to: '/customer/membership' },
     { name: 'Shop', to: '/customer/shop' },
+    { name: 'Cafeteria', to: '/customer/cafeteria' },
   ];
 
   const displayName = user

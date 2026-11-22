@@ -13,7 +13,7 @@ from backend.app.auth.models import User
 from backend.app.auth.service import resolve_primary_role
 from backend.app.core.database import get_db
 from backend.app.memberships.models import Member
-from backend.app.bookings.models import Court, CourtBooking
+from backend.app.bookings.models import Court, CourtBooking, CourtHold
 
 router = APIRouter(prefix="", tags=["Courts & Bookings"])
 
@@ -39,6 +39,9 @@ class TimeSlot(BaseModel):
     time_str: str  # "HH:MM"
     is_available: bool
     price: Decimal
+    is_held: bool = False
+    held_by_other: bool = False
+    held_remaining_seconds: int = 0
 
 
 class CourtAvailabilityResponse(BaseModel):
@@ -47,6 +50,39 @@ class CourtAvailabilityResponse(BaseModel):
     sport: str
     date: date
     slots: List[TimeSlot]
+
+
+class AcquireHoldRequest(BaseModel):
+    booking_date: date
+    start_time: str = Field(..., description="Start time in HH:MM format (e.g. 18:00)")
+    client_session_id: Optional[str] = None
+
+
+class CourtHoldResponse(BaseModel):
+    hold_id: uuid.UUID
+    court_id: uuid.UUID
+    court_name: str
+    sport: str
+    booking_date: date
+    start_time: str
+    expires_at: datetime
+    remaining_seconds: int
+    held_by_current_user: bool
+    client_session_id: Optional[str] = None
+    message: str
+
+
+class ActiveHoldItem(BaseModel):
+    hold_id: uuid.UUID
+    court_id: uuid.UUID
+    court_name: str
+    sport: str
+    booking_date: date
+    start_time: str
+    expires_at: datetime
+    remaining_seconds: int
+    held_by_current_user: bool
+    client_session_id: Optional[str] = None
 
 
 class CreateBookingRequest(BaseModel):
@@ -114,6 +150,19 @@ def get_court_availability(
         .all()
     )
 
+    # Fetch active holds for this court and date
+    now_utc = datetime.now(timezone.utc)
+    active_holds = (
+        db.query(CourtHold)
+        .filter(
+            CourtHold.court_id == court_id,
+            CourtHold.booking_date == booking_date,
+            CourtHold.is_active == True,
+            CourtHold.expires_at > now_utc,
+        )
+        .all()
+    )
+
     # Generate 30-minute intervals between opening_time and closing_time - 1 hour
     slots: List[TimeSlot] = []
     curr_hour = court.opening_time.hour
@@ -144,11 +193,32 @@ def get_court_availability(
                 has_overlap = True
                 break
 
+        # Check overlap against any active 5-minute hold
+        is_held = False
+        held_rem_secs = 0
+        for h in active_holds:
+            h_start = h.start_time
+            h_end = h.end_time
+            if h_start.tzinfo is None:
+                h_start = h_start.replace(tzinfo=timezone.utc)
+            if h_end.tzinfo is None:
+                h_end = h_end.replace(tzinfo=timezone.utc)
+
+            if slot_cursor < h_end and slot_end > h_start:
+                is_held = True
+                held_rem_secs = max(0, int((h.expires_at - now_utc).total_seconds()))
+                break
+
+        is_avail = not has_overlap and not is_held
+
         slots.append(
             TimeSlot(
                 time_str=slot_cursor.strftime("%H:%M"),
-                is_available=not has_overlap,
+                is_available=is_avail,
                 price=court.hourly_rate,
+                is_held=is_held,
+                held_by_other=is_held,
+                held_remaining_seconds=held_rem_secs,
             )
         )
         slot_cursor += timedelta(minutes=30)
@@ -160,6 +230,233 @@ def get_court_availability(
         date=booking_date,
         slots=slots,
     )
+
+
+@router.post("/courts/{court_id}/hold", response_model=CourtHoldResponse)
+def acquire_court_hold(
+    court_id: uuid.UUID,
+    payload: AcquireHoldRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Acquire or extend a 5-minute temporary reservation hold on a court slot."""
+    try:
+        parts = payload.start_time.split(":")
+        slot_time = time(int(parts[0]), int(parts[1]))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid start_time format. Use HH:MM (e.g. 18:00)")
+
+    start_dt = datetime.combine(payload.booking_date, slot_time, tzinfo=timezone.utc)
+    end_dt = start_dt + timedelta(minutes=60)
+    now_utc = datetime.now(timezone.utc)
+
+    # 1. Verify court exists & active
+    court = db.query(Court).filter(Court.id == court_id, Court.is_active == True).first()
+    if not court:
+        raise HTTPException(status_code=404, detail="Court not found or currently inactive.")
+
+    # 2. Check if already confirmed booked
+    conflicting_booking = (
+        db.query(CourtBooking)
+        .filter(
+            CourtBooking.court_id == court_id,
+            CourtBooking.booking_date == payload.booking_date,
+            CourtBooking.status != "CANCELLED",
+            CourtBooking.start_time < end_dt,
+            CourtBooking.end_time > start_dt,
+        )
+        .first()
+    )
+    if conflicting_booking:
+        raise HTTPException(
+            status_code=409,
+            detail="Conflict Detected: This court is already reserved for the selected time slot.",
+        )
+
+    # 3. Clean up expired holds
+    db.query(CourtHold).filter(
+        CourtHold.court_id == court_id,
+        CourtHold.is_active == True,
+        CourtHold.expires_at <= now_utc,
+    ).update({"is_active": False}, synchronize_session=False)
+
+    # 4. Check for existing active hold
+    existing_hold = (
+        db.query(CourtHold)
+        .filter(
+            CourtHold.court_id == court_id,
+            CourtHold.booking_date == payload.booking_date,
+            CourtHold.is_active == True,
+            CourtHold.expires_at > now_utc,
+            CourtHold.start_time < end_dt,
+            CourtHold.end_time > start_dt,
+        )
+        .with_for_update()
+        .first()
+    )
+
+    if existing_hold:
+        is_same_holder = False
+        if existing_hold.user_id == current_user.id:
+            if not existing_hold.client_session_id or not payload.client_session_id:
+                is_same_holder = True
+            elif existing_hold.client_session_id == payload.client_session_id:
+                is_same_holder = True
+
+        if not is_same_holder:
+            # Held by another user / another tab session!
+            rem_secs = max(0, int((existing_hold.expires_at - now_utc).total_seconds()))
+            raise HTTPException(
+                status_code=423,  # HTTP 423 Locked
+                detail="This court is currently in the booking process by someone else right now. Please select another court or try again in a few minutes.",
+                headers={"Retry-After": str(rem_secs)},
+            )
+        else:
+            # User is re-confirming / refreshing their own hold: extend 5 minutes
+            existing_hold.expires_at = now_utc + timedelta(minutes=5)
+            if payload.client_session_id:
+                existing_hold.client_session_id = payload.client_session_id
+            db.commit()
+            db.refresh(existing_hold)
+            return CourtHoldResponse(
+                hold_id=existing_hold.id,
+                court_id=court.id,
+                court_name=court.name,
+                sport=court.sport,
+                booking_date=existing_hold.booking_date,
+                start_time=payload.start_time,
+                expires_at=existing_hold.expires_at,
+                remaining_seconds=300,
+                held_by_current_user=True,
+                client_session_id=existing_hold.client_session_id,
+                message="Your 5-minute reservation hold has been refreshed.",
+            )
+
+    # Deactivate any previous inactive holds for this user on this slot
+    db.query(CourtHold).filter(
+        CourtHold.court_id == court_id,
+        CourtHold.user_id == current_user.id,
+        CourtHold.booking_date == payload.booking_date,
+        CourtHold.start_time == start_dt,
+    ).update({"is_active": False}, synchronize_session=False)
+
+    # 5. Create new 5-minute hold
+    expires_at = now_utc + timedelta(minutes=5)
+    new_hold = CourtHold(
+        court_id=court.id,
+        user_id=current_user.id,
+        booking_date=payload.booking_date,
+        start_time=start_dt,
+        end_time=end_dt,
+        expires_at=expires_at,
+        client_session_id=payload.client_session_id,
+        is_active=True,
+    )
+    db.add(new_hold)
+    db.commit()
+    db.refresh(new_hold)
+
+    return CourtHoldResponse(
+        hold_id=new_hold.id,
+        court_id=court.id,
+        court_name=court.name,
+        sport=court.sport,
+        booking_date=new_hold.booking_date,
+        start_time=payload.start_time,
+        expires_at=new_hold.expires_at,
+        remaining_seconds=300,
+        held_by_current_user=True,
+        client_session_id=new_hold.client_session_id,
+        message="Slot successfully locked for 5 minutes.",
+    )
+
+
+@router.post("/courts/{court_id}/release-hold")
+def release_court_hold(
+    court_id: uuid.UUID,
+    payload: Optional[AcquireHoldRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Release active 5-minute court hold when user cancels or closes booking modal."""
+    q = db.query(CourtHold).filter(
+        CourtHold.court_id == court_id,
+        CourtHold.user_id == current_user.id,
+        CourtHold.is_active == True,
+    )
+    if payload:
+        if payload.client_session_id:
+            q = q.filter(
+                (CourtHold.client_session_id == payload.client_session_id)
+                | (CourtHold.client_session_id == None)
+            )
+        try:
+            parts = payload.start_time.split(":")
+            slot_time = time(int(parts[0]), int(parts[1]))
+            start_dt = datetime.combine(payload.booking_date, slot_time, tzinfo=timezone.utc)
+            q = q.filter(CourtHold.booking_date == payload.booking_date, CourtHold.start_time == start_dt)
+        except Exception:
+            pass
+
+    updated = q.update({"is_active": False}, synchronize_session=False)
+    db.commit()
+    return {"message": "Hold successfully released.", "released_count": updated}
+
+
+@router.get("/courts/holds/active", response_model=List[ActiveHoldItem])
+def list_active_court_holds(
+    court_id: Optional[uuid.UUID] = None,
+    booking_date: Optional[date] = None,
+    client_session_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List currently active 5-minute reservation holds to inform clients in real-time."""
+    now_utc = datetime.now(timezone.utc)
+    # Expire old holds
+    db.query(CourtHold).filter(
+        CourtHold.is_active == True,
+        CourtHold.expires_at <= now_utc,
+    ).update({"is_active": False}, synchronize_session=False)
+    db.commit()
+
+    query = (
+        db.query(CourtHold)
+        .join(Court, CourtHold.court_id == Court.id)
+        .filter(
+            CourtHold.is_active == True,
+            CourtHold.expires_at > now_utc,
+        )
+    )
+    if court_id:
+        query = query.filter(CourtHold.court_id == court_id)
+    if booking_date:
+        query = query.filter(CourtHold.booking_date == booking_date)
+
+    holds = query.all()
+    results = []
+    for h in holds:
+        rem_secs = max(0, int((h.expires_at - now_utc).total_seconds()))
+        time_str = h.start_time.strftime("%H:%M")
+        is_mine = (h.user_id == current_user.id)
+        if is_mine and client_session_id and h.client_session_id:
+            is_mine = (h.client_session_id == client_session_id)
+
+        results.append(
+            ActiveHoldItem(
+                hold_id=h.id,
+                court_id=h.court_id,
+                court_name=h.court.name,
+                sport=h.court.sport,
+                booking_date=h.booking_date,
+                start_time=time_str,
+                expires_at=h.expires_at,
+                remaining_seconds=rem_secs,
+                held_by_current_user=is_mine,
+                client_session_id=h.client_session_id,
+            )
+        )
+    return results
 
 
 @router.post("/bookings", response_model=BookingResponse, status_code=status.HTTP_201_CREATED)
@@ -223,6 +520,26 @@ def create_booking(
             detail="Conflict Detected: This court is already reserved during the selected time slot. Please pick another slot.",
         )
 
+    # 4b. Check if slot has an active hold by another member
+    now_utc = datetime.now(timezone.utc)
+    active_hold = (
+        db.query(CourtHold)
+        .filter(
+            CourtHold.court_id == payload.court_id,
+            CourtHold.booking_date == payload.booking_date,
+            CourtHold.is_active == True,
+            CourtHold.expires_at > now_utc,
+            CourtHold.start_time < end_dt,
+            CourtHold.end_time > start_dt,
+        )
+        .first()
+    )
+    if active_hold and active_hold.user_id != current_user.id:
+        raise HTTPException(
+            status_code=423,
+            detail="This court is currently in the booking process by someone else right now. Please select another court.",
+        )
+
     # 5. Calculate membership discount if member (validating active status and expiry)
     member = db.query(Member).filter(Member.user_id == current_user.id).first()
     discount_amount = Decimal("0.00")
@@ -254,6 +571,8 @@ def create_booking(
         notes=payload.notes,
     )
     db.add(booking)
+    if active_hold and active_hold.user_id == current_user.id:
+        active_hold.is_active = False
     db.commit()
     db.refresh(booking)
 
